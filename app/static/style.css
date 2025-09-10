@@ -20,6 +20,37 @@ form {
     border-radius: 4px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+#project-tree li:hover {
+    background: #f0f4ff;
+}
+
+#project-tree li .proj-name {
+    font-weight: bold;
+    margin-right: 0.5em;
+}
+
+#project-tree li button {
+    background: #e0e7ff;
+    border: none;
+    border-radius: 3px;
+    padding: 0.2em 0.5em;
+    margin-left: 0.2em;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background 0.2s;
+}
+
+#project-tree li button:hover {
+    background: #b6c6f5;
+}
+
+#project-tree li span {
+    display: inline-block;
 }
 
 #project-tree li.dragging {

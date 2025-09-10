@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
 
+
     function serializeTree(ul) {
         const arr = [];
         ul.querySelectorAll(':scope > li').forEach(li => {
@@ -42,7 +43,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 name: li.querySelector('.proj-name')?.textContent.trim() || '',
                 description: li._meta?.description || '',
                 deadline: li._meta?.deadline || '',
-                status: li._meta?.status || ''
+                status: li._meta?.status || '',
+                dependencies: li._meta?.dependencies || '',
+                milestones: li._meta?.milestones || ''
             };
             const subUl = li.querySelector('ul');
             if (subUl) {
@@ -52,6 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         return arr;
     }
+
 
     function renderTree(nodes, parentUl) {
         nodes.forEach(node => {
@@ -66,6 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
 
+
     function createProjectNode(name, meta = {}) {
         const li = document.createElement('li');
         li.style.cursor = 'pointer';
@@ -74,7 +79,9 @@ document.addEventListener('DOMContentLoaded', function() {
         li._meta = {
             description: meta.description || '',
             deadline: meta.deadline || '',
-            status: meta.status || 'Not Started'
+            status: meta.status || 'Not Started',
+            dependencies: meta.dependencies || '',
+            milestones: meta.milestones || ''
         };
 
         // Name span
@@ -95,7 +102,9 @@ document.addEventListener('DOMContentLoaded', function() {
             metaSpan.textContent =
                 (li._meta.description ? ' | ' + li._meta.description : '') +
                 (li._meta.deadline ? ' | Due: ' + li._meta.deadline : '') +
-                (li._meta.status ? ' | Status: ' + li._meta.status : '');
+                (li._meta.status ? ' | Status: ' + li._meta.status : '') +
+                (li._meta.dependencies ? ' | Depends: ' + li._meta.dependencies : '') +
+                (li._meta.milestones ? ' | Milestones: ' + li._meta.milestones : '');
         }
 
         // Drag-and-drop events
@@ -156,6 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         li.appendChild(addSubBtn);
 
+
         // Edit meta button
         const metaBtn = document.createElement('button');
         metaBtn.textContent = '📝';
@@ -169,6 +179,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (deadline !== null) li._meta.deadline = deadline;
             const status = prompt('Status (Not Started/In Progress/Done):', li._meta.status);
             if (status !== null) li._meta.status = status;
+            const dependencies = prompt('Dependencies (comma-separated project names):', li._meta.dependencies);
+            if (dependencies !== null) li._meta.dependencies = dependencies;
+            const milestones = prompt('Milestones (comma-separated):', li._meta.milestones);
+            if (milestones !== null) li._meta.milestones = milestones;
             updateMetaSpan();
         };
         li.appendChild(metaBtn);
