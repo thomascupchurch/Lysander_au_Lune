@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Tree Builder</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Project Tree Builder</h1>
+    <form id="add-project-form">
+        <input type="text" id="project-name" placeholder="Project Name" required>
+        <button type="submit">Add Project</button>
+    </form>
+    <button id="save-tree">Save Tree</button>
+    <button id="load-tree">Load Tree</button>
+    <ul id="project-tree">
+        <!-- Project nodes will appear here -->
+    </ul>
+    <script src="/static/tree.js"></script>
+</body>
+</html>

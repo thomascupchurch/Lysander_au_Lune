@@ -1,5 +1,7 @@
-from app import app
 
-@app.route('/')
+from app import app
+from flask import render_template
+
+@app.route("/")
 def index():
-    return "Hello, Project Management App!"
+    return render_template("tree.html")

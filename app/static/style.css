@@ -1,0 +1,31 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 2em;
+    background: #f9f9f9;
+}
+h1 {
+    color: #333;
+}
+form {
+    margin-bottom: 1em;
+}
+#project-tree {
+    list-style-type: none;
+    padding-left: 0;
+}
+#project-tree li {
+    background: #fff;
+    margin-bottom: 0.5em;
+    padding: 0.5em 1em;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: background 0.2s;
+}
+
+#project-tree li.dragging {
+    opacity: 0.5;
+}
+
+#project-tree li.drag-over {
+    background: #e0e7ff;
+}
