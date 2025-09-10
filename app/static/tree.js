@@ -1,3 +1,119 @@
+    // File upload and project select
+    const uploadForm = document.getElementById('upload-form');
+    const projectSelect = document.getElementById('project-select');
+    const fileListDiv = document.getElementById('file-list');
+    function flattenProjects(ul, arr = []) {
+        ul.querySelectorAll(':scope > li').forEach(li => {
+            const name = li.querySelector('.proj-name')?.textContent.trim();
+            if (name) {
+                arr.push({
+                    id: li.dataset.projectId,
+                    name
+                });
+            }
+            const subUl = li.querySelector('ul');
+            if (subUl) flattenProjects(subUl, arr);
+        });
+        return arr;
+    }
+
+    function populateProjectSelect() {
+        if (!projectSelect) return;
+        // Fetch project tree from server to get IDs
+        fetch('/api/load_tree').then(r => r.json()).then(data => {
+            projectSelect.innerHTML = '';
+            function addOptions(nodes) {
+                nodes.forEach(node => {
+                    const opt = document.createElement('option');
+                    opt.value = node.id;
+                    opt.textContent = node.name;
+                    projectSelect.appendChild(opt);
+                    if (node.children) addOptions(node.children);
+                });
+            }
+            addOptions(data.tree || []);
+            if (projectSelect.options.length) {
+                projectSelect.selectedIndex = 0;
+                listFilesForSelected();
+            }
+        });
+    }
+
+    function listFilesForSelected() {
+        if (!projectSelect || !fileListDiv) return;
+        const pid = projectSelect.value;
+        if (!pid) {
+            fileListDiv.textContent = '';
+            return;
+        }
+        fetch('/api/list_files/' + pid)
+            .then(r => r.json())
+            .then(data => {
+                if (data.files && data.files.length) {
+                    fileListDiv.innerHTML = '<b>Files:</b> ' + data.files.map(f =>
+                        `<span style="margin-right:0.5em;">${f} <button data-fname="${f}" class="delete-file-btn" title="Delete">🗑</button></span>`
+                    ).join('');
+                    // Add event listeners for delete buttons
+                    fileListDiv.querySelectorAll('.delete-file-btn').forEach(btn => {
+                        btn.onclick = function() {
+                            if (confirm('Delete file ' + btn.dataset.fname + '?')) {
+                                fetch('/api/delete_file', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ filename: btn.dataset.fname, project_id: pid })
+                                })
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (data.status === 'success') {
+                                        listFilesForSelected();
+                                    } else {
+                                        alert('Delete failed: ' + (data.error || 'Unknown error'));
+                                    }
+                                });
+                            }
+                        };
+                    });
+                } else {
+                    fileListDiv.textContent = 'No files uploaded for this project.';
+                }
+            });
+    }
+
+    if (projectSelect) {
+        projectSelect.addEventListener('change', listFilesForSelected);
+        populateProjectSelect();
+    }
+
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('file-input');
+            const statusDiv = document.getElementById('upload-status');
+            if (!fileInput.files.length || !projectSelect.value) {
+                statusDiv.textContent = 'Select a project and file.';
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('project_id', projectSelect.value);
+            fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusDiv.textContent = 'File uploaded: ' + data.filename;
+                    listFilesForSelected();
+                } else {
+                    statusDiv.textContent = 'Upload failed: ' + (data.error || 'Unknown error');
+                }
+            })
+            .catch(() => {
+                statusDiv.textContent = 'Upload failed.';
+            });
+        });
+    }
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('add-project-form');
     const projectTree = document.getElementById('project-tree');
@@ -14,6 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Save and Load buttons
+
     document.getElementById('save-tree').onclick = function() {
         const treeData = serializeTree(projectTree);
         fetch('/api/save_tree', {
@@ -22,6 +139,9 @@ document.addEventListener('DOMContentLoaded', function() {
             body: JSON.stringify({ tree: treeData })
         }).then(r => r.json()).then(data => {
             alert('Project tree saved!');
+            if (typeof populateProjectSelect === 'function') {
+                populateProjectSelect();
+            }
         });
     };
 

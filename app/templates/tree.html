@@ -14,6 +14,15 @@
     </form>
     <button id="save-tree">Save Tree</button>
     <button id="load-tree">Load Tree</button>
+    <form id="upload-form" enctype="multipart/form-data" style="margin-top:2em;">
+        <label for="project-select">Select Project:</label>
+        <select id="project-select" name="project_id"></select>
+        <label for="file-input">Upload File:</label>
+        <input type="file" id="file-input" name="file">
+        <button type="submit">Upload</button>
+    </form>
+    <div id="upload-status"></div>
+    <div id="file-list"></div>
     <ul id="project-tree">
         <!-- Project nodes will appear here -->
     </ul>

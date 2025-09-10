@@ -8,3 +8,5 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 from app import routes
 from app import api
 from app.models import project
+from app import file_upload
+from app import file_api
