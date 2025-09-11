@@ -1,19 +1,176 @@
 // --- Gantt Chart View and Main Tree Logic ---
+// (Removed redundant, unclosed DOMContentLoaded handler. All logic is now inside the single handler below.)
+// --- Gantt Chart View and Main Tree Logic ---
 document.addEventListener('DOMContentLoaded', function() {
     // Declare all DOM elements at the top for global access
-    const ganttBtn = document.getElementById('toggle-gantt');
     const ganttContainer = document.getElementById('gantt-container');
     const projectTree = document.getElementById('project-tree');
     const treeHeaders = document.getElementById('tree-headers');
+    const ganttBtn = document.getElementById('toggle-gantt');
+    const ganttLayerControls = document.getElementById('gantt-layer-controls');
+    const projectSelect = document.getElementById('project-select');
+    const uploadForm = document.getElementById('upload-form');
+    const fileListDiv = document.getElementById('file-list');
     const form = document.getElementById('add-project-form');
     const fileGalleryDiv = document.getElementById('file-gallery');
-    const uploadForm = document.getElementById('upload-form');
-    const projectSelect = document.getElementById('project-select');
-    const fileListDiv = document.getElementById('file-list');
-
-    const ganttLayerControls = document.getElementById('gantt-layer-controls');
-    // ...existing code...
     let activeLayers = { 'Item': true, 'Feature': false, 'Phase': false, 'Project': false };
+
+    // --- Minimal Gantt Chart Renderer ---
+    function renderGanttChart() {
+        console.log('renderGanttChart called');
+        if (!ganttContainer) {
+            console.warn('ganttContainer not found');
+            return;
+        }
+
+        // Helper: parse date string (YYYY-MM-DD)
+        function parseDate(str) {
+            if (!str) return null;
+            const d = new Date(str);
+            return isNaN(d) ? null : d;
+        }
+
+        // Helper: add days to a date
+        function addDays(date, days) {
+            const d = new Date(date);
+            d.setDate(d.getDate() + days);
+            return d;
+        }
+
+        // Helper: get days between two dates
+        function daysBetween(a, b) {
+            return Math.round((b - a) / (1000 * 60 * 60 * 24));
+        }
+
+        // Helper: parse estimated_duration (e.g. '5 days', '2 weeks')
+        function parseDuration(str) {
+            if (!str) return 1;
+            const m = str.match(/(\d+)\s*(day|week|month)s?/i);
+            if (!m) return 1;
+            const n = parseInt(m[1]);
+            if (/week/i.test(m[2])) return n * 7;
+            if (/month/i.test(m[2])) return n * 30;
+            return n;
+        }
+
+        // 1. Gather visible tasks from the tree
+        function gatherTasks(ul, arr = [], parentLevel = 0) {
+            ul.querySelectorAll(':scope > li').forEach(li => {
+                const meta = li._meta || {};
+                const level = meta.level || (CLASS_LABELS[parentLevel] || 'Item');
+                if (activeLayers[level]) {
+                    arr.push({
+                        name: li.querySelector('.proj-name')?.textContent.trim() || '',
+                        planned_start: meta.planned_start,
+                        estimated_duration: meta.estimated_duration,
+                        deadline: meta.deadline,
+                        level,
+                        status: meta.status,
+                        li
+                    });
+                }
+                const subUl = li.querySelector('ul');
+                if (subUl) gatherTasks(subUl, arr, parentLevel + 1);
+            });
+            return arr;
+        }
+
+        const tasks = gatherTasks(projectTree);
+        if (!tasks.length) {
+            ganttContainer.innerHTML = '<div style="padding:2em;text-align:center;font-size:1.2em;color:#888;">No tasks to display.</div>';
+            return;
+        }
+
+        // 2. Compute date range
+        let minDate = null, maxDate = null;
+        tasks.forEach(t => {
+            const start = parseDate(t.planned_start);
+            const dur = parseDuration(t.estimated_duration);
+            const end = start ? addDays(start, dur) : null;
+            if (start && (!minDate || start < minDate)) minDate = start;
+            if (end && (!maxDate || end > maxDate)) maxDate = end;
+            const deadline = parseDate(t.deadline);
+            if (deadline && (!maxDate || deadline > maxDate)) maxDate = deadline;
+        });
+        if (!minDate || !maxDate) {
+            ganttContainer.innerHTML = '<div style="padding:2em;text-align:center;font-size:1.2em;color:#888;">No valid dates to display.</div>';
+            return;
+        }
+
+        // 3. Render SVG Gantt chart
+        const dayWidth = 24; // px per day
+        const barHeight = 28;
+        const barGap = 12;
+        const leftPad = 180;
+        const topPad = 40;
+        const chartWidth = daysBetween(minDate, maxDate) * dayWidth + leftPad + 40;
+        const chartHeight = tasks.length * (barHeight + barGap) + topPad + 40;
+
+        // Time axis labels (every 7 days)
+        let axisLabels = '';
+        for (let d = new Date(minDate), i = 0; d <= maxDate; d = addDays(d, 7), i++) {
+            const x = leftPad + daysBetween(minDate, d) * dayWidth;
+            axisLabels += `<text x="${x}" y="${topPad - 10}" font-size="12" fill="#555">${d.toISOString().slice(0,10)}</text>`;
+            axisLabels += `<line x1="${x}" y1="${topPad - 5}" x2="${x}" y2="${chartHeight - 20}" stroke="#eee" />`;
+        }
+
+        // Bars
+        let bars = '';
+        tasks.forEach((t, i) => {
+            const start = parseDate(t.planned_start) || minDate;
+            const dur = parseDuration(t.estimated_duration);
+            const end = addDays(start, dur);
+            const y = topPad + i * (barHeight + barGap);
+            const x = leftPad + daysBetween(minDate, start) * dayWidth;
+            const w = Math.max(1, daysBetween(start, end) * dayWidth);
+            // Color by level
+            const colorMap = { 'Project':'#FF8200', 'Phase':'#1E90FF', 'Feature':'#6A4FB6', 'Item':'#4BB543' };
+            const fill = colorMap[t.level] || '#888';
+            bars += `<rect x="${x}" y="${y}" width="${w}" height="${barHeight}" rx="6" fill="${fill}" fill-opacity="0.85" />`;
+            bars += `<text x="${x+8}" y="${y+barHeight/2+5}" font-size="15" fill="#fff">${t.name}</text>`;
+            // Deadline marker
+            if (t.deadline) {
+                const dx = leftPad + daysBetween(minDate, parseDate(t.deadline)) * dayWidth;
+                bars += `<line x1="${dx}" y1="${y}" x2="${dx}" y2="${y+barHeight}" stroke="#d00" stroke-width="2" />`;
+            }
+        });
+
+        // SVG wrapper
+        ganttContainer.innerHTML = `<div style="overflow-x:auto;"><svg width="${chartWidth}" height="${chartHeight}" style="background:#faf9f6;border-radius:10px;box-shadow:0 2px 8px #0001;">
+            <g>${axisLabels}</g>
+            <g>${bars}</g>
+        </svg></div>`;
+    }
+
+    // --- Gantt Chart View Toggle ---
+    if (ganttBtn && ganttContainer && projectTree && treeHeaders && ganttLayerControls) {
+        ganttBtn.addEventListener('click', function() {
+            const isGanttVisible = ganttContainer.style.display !== 'none';
+            if (!isGanttVisible) {
+                // Show Gantt, hide tree
+                ganttContainer.style.display = 'block';
+                ganttLayerControls.style.display = 'flex';
+                projectTree.style.display = 'none';
+                treeHeaders.style.display = 'none';
+                renderGanttLayerControls();
+                renderGanttChart();
+                ganttBtn.textContent = 'Tree View';
+            } else {
+                // Show tree, hide Gantt
+                ganttContainer.style.display = 'none';
+                ganttLayerControls.style.display = 'none';
+                projectTree.style.display = 'block';
+                treeHeaders.style.display = 'flex';
+                ganttBtn.textContent = 'Gantt Chart View';
+            }
+        });
+        // Ensure initial state is tree view
+        ganttContainer.style.display = 'none';
+        ganttLayerControls.style.display = 'none';
+        projectTree.style.display = 'block';
+        treeHeaders.style.display = 'flex';
+    }
+
 
     function renderGanttLayerControls() {
         if (!ganttLayerControls) return;
@@ -45,168 +202,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!Object.values(activeLayers).some(v => v)) {
                     activeLayers['Item'] = true;
                 }
-                renderGanttLayerControls();
                 renderGanttChart();
             };
             ganttLayerControls.appendChild(btn);
-        });
-    }
-
-    if (ganttBtn && ganttContainer && projectTree) {
-        ganttBtn.onclick = function() {
-            if (ganttContainer.style.display === 'none') {
-                ganttContainer.style.display = 'block';
-                ganttLayerControls.style.display = 'flex';
-                projectTree.style.display = 'none';
-                if (treeHeaders) treeHeaders.style.visibility = 'hidden';
-                renderGanttLayerControls();
-                renderGanttChart();
-                ganttBtn.textContent = 'Tree View';
-            } else {
-                ganttContainer.style.display = 'none';
-                ganttLayerControls.style.display = 'none';
-                projectTree.style.display = '';
-                if (treeHeaders) treeHeaders.style.visibility = 'visible';
-                ganttBtn.textContent = 'Gantt Chart View';
-            }
-        };
-    }
-
-    function flattenTreeForGantt(nodes, arr = [], parentName = '', level = 0) {
-        nodes.forEach(node => {
-            arr.push({
-                name: node.name,
-                start: node.planned_start || '',
-                end: node.deadline || '',
-                status: node.status || '',
-                parent: parentName,
-                level: node.level || CLASS_LABELS[level] || 'Item',
-                estimated_duration: node.estimated_duration || '',
-                external: node.external === true
-            });
-            if (node.children && node.children.length) {
-                flattenTreeForGantt(node.children, arr, node.name, level + 1);
-            }
-        });
-        return arr;
-    }
-
-    function renderGanttChart() {
-        ganttContainer.innerHTML = '';
-        fetch('/api/load_tree').then(r => r.json()).then(data => {
-            const flat = flattenTreeForGantt(data.tree || []);
-            if (!flat.length) {
-                ganttContainer.textContent = 'No data for Gantt chart.';
-                return;
-            }
-            // Visual Gantt: Layered bar chart
-            // Group by level
-            const grouped = {};
-            CLASS_LABELS.forEach(l => grouped[l] = []);
-            flat.forEach(row => {
-                if (grouped[row.level]) grouped[row.level].push(row);
-            });
-            // Find min/max dates for scaling
-            const allDates = flat.map(r => r.start).concat(flat.map(r => r.end)).filter(Boolean);
-            const minDate = allDates.length ? new Date(Math.min(...allDates.map(d => new Date(d).getTime()))) : new Date();
-            const maxDate = allDates.length ? new Date(Math.max(...allDates.map(d => new Date(d).getTime()))) : new Date();
-            const dayMs = 24*60*60*1000;
-            const totalDays = Math.max(1, Math.round((maxDate - minDate) / dayMs));
-
-            // Chart container
-            const chart = document.createElement('div');
-            chart.style.position = 'relative';
-            chart.style.width = '100%';
-            chart.style.minHeight = '400px';
-            chart.style.background = '#fff';
-            chart.style.borderRadius = '10px';
-            chart.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)';
-            chart.style.padding = '2em 1em 2em 1em';
-            chart.style.overflowX = 'auto';
-
-            // Layered bars
-            CLASS_LABELS.forEach((level, i) => {
-                const layer = document.createElement('div');
-                layer.style.position = 'relative';
-                layer.style.height = '48px';
-                layer.style.marginBottom = '0.5em';
-                layer.style.opacity = activeLayers[level] ? '1' : '0.25';
-                layer.style.transition = 'opacity 0.3s';
-                grouped[level].forEach(row => {
-                    let bar = document.createElement('div');
-                    if (row.start && row.end) {
-                        const start = new Date(row.start);
-                        const end = new Date(row.end);
-                        const left = ((start - minDate) / (dayMs * totalDays)) * 100;
-                        const width = Math.max(2, ((end - start) / (dayMs * totalDays)) * 100);
-                        bar.style.position = 'absolute';
-                        bar.style.left = left + '%';
-                        bar.style.width = width + '%';
-                        bar.style.background = '#FF8200';
-                        bar.title = `${row.name}\n${level}\n${row.external ? 'External' : 'Internal'}\n${row.status ? 'Status: ' + row.status + '\n' : ''}${row.estimated_duration ? 'Est: ' + row.estimated_duration + '\n' : ''}${row.start ? 'Start: ' + row.start + '\n' : ''}${row.end ? 'End: ' + row.end : ''}`;
-                    } else {
-                        // Missing date(s): show warning bar at left
-                        bar.style.position = 'absolute';
-                        bar.style.left = '0';
-                        bar.style.width = '5%';
-                        bar.style.background = '#FFD700'; // gold/yellow for warning
-                        bar.title = `${row.name}\n${level}\n(Missing start or deadline)`;
-                    }
-                    bar.style.height = '38px';
-                    bar.style.top = '5px';
-                    bar.style.borderRadius = '6px';
-                    bar.style.boxShadow = activeLayers[level] ? '0 2px 8px rgba(0,0,0,0.10)' : 'none';
-                    bar.style.display = 'flex';
-                    bar.style.alignItems = 'center';
-                    bar.style.justifyContent = 'center';
-                    bar.style.color = '#fff';
-                    bar.style.fontWeight = 'bold';
-                    bar.style.fontSize = '1em';
-                    bar.style.cursor = 'pointer';
-                    bar.textContent = row.name;
-                    layer.appendChild(bar);
-                });
-                // Layer label
-                const label = document.createElement('span');
-                label.textContent = level;
-                label.style.position = 'absolute';
-                label.style.left = '0';
-                label.style.top = '-1.5em';
-                label.style.fontWeight = 'bold';
-                label.style.color = '#333';
-                label.style.fontSize = '1em';
-                chart.appendChild(label);
-                chart.appendChild(layer);
-            });
-
-            // Date axis
-            const axis = document.createElement('div');
-            axis.style.position = 'relative';
-            axis.style.height = '2em';
-            axis.style.marginTop = '1em';
-            axis.style.borderTop = '1px solid #ccc';
-            for (let d = 0; d <= totalDays; d += Math.ceil(totalDays/10)) {
-                const tick = document.createElement('div');
-                tick.style.position = 'absolute';
-                tick.style.left = ((d/totalDays)*100) + '%';
-                tick.style.top = '0';
-                tick.style.width = '1px';
-                tick.style.height = '12px';
-                tick.style.background = '#aaa';
-                axis.appendChild(tick);
-                const dateLabel = document.createElement('span');
-                dateLabel.style.position = 'absolute';
-                dateLabel.style.left = ((d/totalDays)*100) + '%';
-                dateLabel.style.top = '14px';
-                dateLabel.style.transform = 'translateX(-50%)';
-                dateLabel.style.fontSize = '0.9em';
-                dateLabel.style.color = '#333';
-                const date = new Date(minDate.getTime() + d*dayMs);
-                dateLabel.textContent = date.toISOString().slice(0,10);
-                axis.appendChild(dateLabel);
-            }
-            chart.appendChild(axis);
-            ganttContainer.appendChild(chart);
         });
     }
 
@@ -491,12 +489,24 @@ document.addEventListener('DOMContentLoaded', function() {
     setupAutoSaveListeners();
 
     document.getElementById('load-tree').onclick = function() {
-        fetch('/api/load_tree').then(r => r.json()).then(data => {
-            projectTree.innerHTML = '';
-            if (data.tree) {
-                renderTree(data.tree, projectTree);
-            }
-        });
+        console.log('Load Tree button clicked');
+        fetch('/api/load_tree')
+            .then(r => {
+                if (!r.ok) throw new Error('Network response was not ok: ' + r.status);
+                return r.json();
+            })
+            .then(data => {
+                console.log('Loaded tree data:', data);
+                projectTree.innerHTML = '';
+                if (data.tree) {
+                    renderTree(data.tree, projectTree);
+                } else {
+                    console.warn('No tree data found in response');
+                }
+            })
+            .catch(err => {
+                console.error('Error loading tree:', err);
+            });
     };
 
 
@@ -781,6 +791,7 @@ if (editNodeForm) {
 
 
     // Optionally: show gallery for selected project in dropdown on load
+
     if (projectSelect) {
         projectSelect.addEventListener('change', function() {
             listFilesForSelected();
@@ -789,7 +800,8 @@ if (editNodeForm) {
         // Show for initial selection
         showGalleryForProject(projectSelect.value);
     }
-});
+
+}); // <-- Properly close DOMContentLoaded handler
 
 
 

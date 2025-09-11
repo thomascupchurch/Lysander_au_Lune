@@ -1,3 +1,15 @@
+    <!-- Gantt date edit modal -->
+    <div id="gantt-date-modal" style="display:none;position:fixed;z-index:3000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
+        <div style="background:#fff;padding:2em 2em 1em 2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
+            <span id="gantt-date-modal-close" style="position:absolute;top:0.5em;right:1em;font-size:2em;color:#333;cursor:pointer;">&times;</span>
+            <form id="gantt-date-form">
+                <h3>Edit Dates</h3>
+                <label>Planned Start:<br><input type="date" id="gantt-edit-start"></label><br><br>
+                <label>Deadline:<br><input type="date" id="gantt-edit-deadline"></label><br><br>
+                <button type="submit">Save</button>
+            </form>
+        </div>
+    </div>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,9 +19,9 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <header style="background:#fff;color:#222;padding:1.2em 2em 1.2em 2em;margin-bottom:2em;letter-spacing:0.03em;font-size:1.5em;font-weight:bold;">
-        <div style="display:flex;justify-content:center;align-items:center;height:100%;">
-            <img src="/static/LSI_Power_T_Combo_Logo.png" alt="Header Logo" style="height:144px;max-width:90vw;object-fit:contain;">
+    <header style="background:#fff;color:#222;padding:0.7em 1.5em;margin-bottom:1.2em;letter-spacing:0.03em;font-size:1.2em;font-weight:bold;">
+        <div style="display:flex;justify-content:center;align-items:center;">
+            <img src="/static/LSI_Power_T_Combo_Logo.png" alt="Header Logo" style="height:96px;max-width:40vw;object-fit:contain;">
         </div>
     </header>
     <div id="edit-node-saved" style="display:none;position:fixed;z-index:2100;left:50%;top:10vh;transform:translateX(-50%);background:#4BB543;color:#fff;padding:1em 2em;border-radius:6px;font-size:1.2em;box-shadow:0 2px 8px rgba(0,0,0,0.15);">Saved!</div>
