@@ -8,24 +8,49 @@ def clear_db():
 
 def build_tree(nodes, parent=None):
     for node in nodes:
-        proj = ProjectNode(
-            name=node.get('name'),
-            description=node.get('description'),
-            deadline=node.get('deadline'),
-            status=node.get('status'),
-            dependencies=node.get('dependencies'),
-            milestones=node.get('milestones'),
-            parent=parent
-        )
-        db.session.add(proj)
-        db.session.flush()
+        proj = None
+        if node.get('id'):
+            proj = ProjectNode.query.get(node['id'])
+            if proj:
+                proj.name = node.get('name')
+                proj.description = node.get('description')
+                proj.deadline = node.get('deadline')
+                proj.status = node.get('status')
+                proj.dependencies = node.get('dependencies')
+                proj.milestones = node.get('milestones')
+                proj.parent = parent
+            else:
+                proj = ProjectNode(
+                    name=node.get('name'),
+                    description=node.get('description'),
+                    deadline=node.get('deadline'),
+                    status=node.get('status'),
+                    dependencies=node.get('dependencies'),
+                    milestones=node.get('milestones'),
+                    parent=parent
+                )
+                db.session.add(proj)
+                db.session.flush()
+        else:
+            proj = ProjectNode(
+                name=node.get('name'),
+                description=node.get('description'),
+                deadline=node.get('deadline'),
+                status=node.get('status'),
+                dependencies=node.get('dependencies'),
+                milestones=node.get('milestones'),
+                parent=parent
+            )
+            db.session.add(proj)
+            db.session.flush()
         if node.get('children'):
             build_tree(node['children'], proj)
 
 @app.route('/api/save_tree', methods=['POST'])
 def save_tree():
-    clear_db()
     tree = request.json.get('tree', [])
+    if not tree:
+        clear_db()
     build_tree(tree)
     db.session.commit()
     return jsonify({'status': 'success'})

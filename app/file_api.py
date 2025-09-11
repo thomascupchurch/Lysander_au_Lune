@@ -1,6 +1,10 @@
 
-from flask import request, jsonify
+from flask import request, jsonify, send_from_directory
 from app import app
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    # Serve uploaded files for gallery display
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 from app.models.project import db, File, ProjectNode
 import os
 

@@ -1,3 +1,29 @@
+    <!-- Modal for editing node details -->
+    <div id="edit-node-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+        <div style="background:#fff;padding:2em 2em 1em 2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
+            <span id="edit-node-modal-close" style="position:absolute;top:0.5em;right:1em;font-size:2em;color:#333;cursor:pointer;">&times;</span>
+            <form id="edit-node-form">
+                <h3>Edit Node</h3>
+                <label>Name:<br><input type="text" id="edit-node-name" required></label><br><br>
+                <label>Description:<br><input type="text" id="edit-node-desc"></label><br><br>
+                <label>Deadline:<br><input type="date" id="edit-node-deadline"></label><br><br>
+                <label>Status:<br><select id="edit-node-status">
+                    <option>Not Started</option>
+                    <option>In Progress</option>
+                    <option>Done</option>
+                </select></label><br><br>
+                <label>Dependencies:<br><input type="text" id="edit-node-deps"></label><br><br>
+                <label>Milestones:<br><input type="text" id="edit-node-milestones"></label><br><br>
+                <label>Classification:<br><select id="edit-node-level">
+                    <option>Project</option>
+                    <option>Phase</option>
+                    <option>Feature</option>
+                    <option>Item</option>
+                </select></label><br><br>
+                <button type="submit">Save</button>
+            </form>
+        </div>
+    </div>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,6 +40,7 @@
     </form>
     <button id="save-tree">Save Tree</button>
     <button id="load-tree">Load Tree</button>
+    <button id="toggle-gantt">Gantt Chart View</button>
     <form id="upload-form" enctype="multipart/form-data" style="margin-top:2em;">
         <label for="project-select">Select Project:</label>
         <select id="project-select" name="project_id"></select>
@@ -23,9 +50,22 @@
     </form>
     <div id="upload-status"></div>
     <div id="file-list"></div>
+    <div id="file-gallery" style="margin-top:1em;"></div>
+    <!-- Modal for full-size file viewing -->
+    <div id="file-modal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
+        <span id="file-modal-close" style="position:absolute;top:2vh;right:3vw;font-size:2em;color:#fff;cursor:pointer;">&times;</span>
+        <div id="file-modal-content" style="max-width:90vw;max-height:90vh;"></div>
+    </div>
+    <div id="tree-headers" style="display:flex;gap:2em;margin-bottom:0.5em;font-weight:bold;color:#fff;">
+        <span style="flex:1;">Project</span>
+        <span style="flex:1;">Phase</span>
+        <span style="flex:1;">Feature</span>
+        <span style="flex:1;">Item</span>
+    </div>
     <ul id="project-tree">
         <!-- Project nodes will appear here -->
     </ul>
+    <div id="gantt-container" style="display:none;margin-top:2em;"></div>
     <script src="/static/tree.js"></script>
 </body>
 </html>
