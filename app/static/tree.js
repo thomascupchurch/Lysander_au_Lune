@@ -16,11 +16,43 @@ document.addEventListener('DOMContentLoaded', function() {
     let activeLayers = { 'Item': true, 'Feature': false, 'Phase': false, 'Project': false };
 
     // --- Minimal Gantt Chart Renderer ---
+    // --- Gantt Chart Zoom State ---
+    let ganttDayWidth = 24; // px per day, default
+
     function renderGanttChart() {
+        updateParentDates(projectTree);
         console.log('renderGanttChart called');
         if (!ganttContainer) {
             console.warn('ganttContainer not found');
             return;
+        }
+
+        // Add zoom controls if not present
+        let zoomControls = document.getElementById('gantt-zoom-controls');
+        if (!zoomControls) {
+            zoomControls = document.createElement('div');
+            zoomControls.id = 'gantt-zoom-controls';
+            zoomControls.style.display = 'flex';
+            zoomControls.style.justifyContent = 'flex-end';
+            zoomControls.style.alignItems = 'center';
+            zoomControls.style.gap = '0.5em';
+            zoomControls.style.margin = '0 0 0.5em 0';
+            zoomControls.innerHTML = `
+                <button id="gantt-zoom-out" title="Zoom Out" style="font-size:1.3em;padding:0.2em 0.7em;">-</button>
+                <span style="font-size:1em;">Zoom</span>
+                <button id="gantt-zoom-in" title="Zoom In" style="font-size:1.3em;padding:0.2em 0.7em;">+</button>
+            `;
+            ganttContainer.parentNode.insertBefore(zoomControls, ganttContainer);
+            document.getElementById('gantt-zoom-in').onclick = function() {
+                ganttDayWidth = Math.min(96, ganttDayWidth * 1.25);
+                renderGanttChart();
+            };
+            document.getElementById('gantt-zoom-out').onclick = function() {
+                ganttDayWidth = Math.max(4, ganttDayWidth / 1.25);
+                renderGanttChart();
+            };
+        } else {
+            zoomControls.style.display = ganttContainer.style.display === 'none' ? 'none' : 'flex';
         }
 
         // Helper: parse date string (YYYY-MM-DD)
@@ -98,7 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // 3. Render SVG Gantt chart
-        const dayWidth = 24; // px per day
+    const dayWidth = ganttDayWidth;
         const barHeight = 28;
         const barGap = 12;
         const leftPad = 180;
@@ -444,6 +476,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Auto-save function
     function autoSaveTree() {
+        updateParentDates(projectTree);
         const treeData = serializeTree(projectTree);
         fetch('/api/save_tree', {
             method: 'POST',
@@ -755,7 +788,8 @@ if (editNodeForm) {
                 setTimeout(() => { savedMsg.style.display = 'none'; savedMsg.style.transition = ''; }, 700);
             }, 900);
         }
-        setTimeout(autoSaveTree, 100);
+    console.log('[Edit Modal] Saved node, triggering autoSaveTree');
+    setTimeout(autoSaveTree, 100);
     };
 }
 
@@ -769,6 +803,8 @@ if (editNodeForm) {
             const newName = prompt('Rename project:', nameSpan.textContent.trim());
             if (newName) {
                 nameSpan.textContent = newName;
+                console.log('[Rename] Renamed node, triggering autoSaveTree');
+                setTimeout(autoSaveTree, 100);
             }
         };
         li.appendChild(renameBtn);
@@ -789,6 +825,57 @@ if (editNodeForm) {
         return li;
     }
 
+
+    // --- Update parent dates based on children ---
+function updateParentDates(ul) {
+    // Helper: parse date string (YYYY-MM-DD)
+    function parseDate(str) {
+        if (!str) return null;
+        const d = new Date(str);
+        return isNaN(d) ? null : d;
+    }
+    // Helper: add days to a date
+    function addDays(date, days) {
+        const d = new Date(date);
+        d.setDate(d.getDate() + days);
+        return d;
+    }
+    // Helper: parse estimated_duration (e.g. '5 days', '2 weeks')
+    function parseDuration(str) {
+        if (!str) return 1;
+        const m = str.match(/(\d+)\s*(day|week|month)s?/i);
+        if (!m) return 1;
+        const n = parseInt(m[1]);
+        if (/week/i.test(m[2])) return n * 7;
+        if (/month/i.test(m[2])) return n * 30;
+        return n;
+    }
+    ul.querySelectorAll(':scope > li').forEach(li => {
+        const subUl = li.querySelector('ul');
+        if (subUl) {
+            updateParentDates(subUl);
+            // Gather children's start and end dates
+            let minStart = null, maxEnd = null;
+            subUl.querySelectorAll(':scope > li').forEach(childLi => {
+                const meta = childLi._meta || {};
+                const start = parseDate(meta.planned_start);
+                const dur = parseDuration(meta.estimated_duration);
+                const end = start ? addDays(start, dur) : null;
+                if (start && (!minStart || start < minStart)) minStart = start;
+                if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
+            });
+            if (minStart) li._meta.planned_start = minStart.toISOString().slice(0,10);
+            if (maxEnd) {
+                // Set estimated_duration so that end = planned_start + estimated_duration
+                const parentStart = parseDate(li._meta.planned_start);
+                if (parentStart) {
+                    const days = Math.max(1, Math.round((maxEnd - parentStart) / (1000*60*60*24)));
+                    li._meta.estimated_duration = days + ' days';
+                }
+            }
+        }
+    });
+}
 
     // Optionally: show gallery for selected project in dropdown on load
 
