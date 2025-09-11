@@ -61,8 +61,7 @@ def build_tree(nodes, parent=None):
 @app.route('/api/save_tree', methods=['POST'])
 def save_tree():
     tree = request.json.get('tree', [])
-    if not tree:
-        clear_db()
+    clear_db()  # Always clear before rebuilding
     build_tree(tree)
     db.session.commit()
     return jsonify({'status': 'success'})

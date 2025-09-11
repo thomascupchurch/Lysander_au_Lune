@@ -1,3 +1,4 @@
+    <!-- tree-container moved to correct position below -->
     <!-- Gantt date edit modal -->
     <div id="gantt-date-modal" style="display:none;position:fixed;z-index:3000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
         <div style="background:#fff;padding:2em 2em 1em 2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
@@ -83,13 +84,12 @@
         <span style="flex:1;">Feature</span>
         <span style="flex:1;">Item</span>
     </div>
-    <div id="tree-container" style="background:#fff;padding:2em 2em 2em 2em;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.07);margin-bottom:2em;">
+    <div id="tree-container" style="background:#fff;padding:2em 2em 2em 2em;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.07);">
         <ul id="project-tree" style="background:transparent;">
         <!-- Project nodes will appear here -->
         </ul>
     </div>
-    <div id="gantt-layer-controls" style="display:none;margin-bottom:1em;"></div>
-    <div id="gantt-container" style="display:none;margin-top:2em;background:#fff;"></div>
+    <div id="gantt-container" style="display:none;background:#fff;"></div>
     <script src="/static/tree.js"></script>
 </body>
 </html>

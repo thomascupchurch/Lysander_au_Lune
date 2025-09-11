@@ -7,13 +7,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const projectTree = document.getElementById('project-tree');
     const treeHeaders = document.getElementById('tree-headers');
     const ganttBtn = document.getElementById('toggle-gantt');
-    const ganttLayerControls = document.getElementById('gantt-layer-controls');
+    // Removed Gantt layer controls
     const projectSelect = document.getElementById('project-select');
     const uploadForm = document.getElementById('upload-form');
     const fileListDiv = document.getElementById('file-list');
     const form = document.getElementById('add-project-form');
     const fileGalleryDiv = document.getElementById('file-gallery');
-    let activeLayers = { 'Item': true, 'Feature': false, 'Phase': false, 'Project': false };
+    // Removed activeLayers for Gantt layer selection
 
     // --- Minimal Gantt Chart Renderer ---
     // --- Gantt Chart Zoom State ---
@@ -27,387 +27,243 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Add zoom controls if not present
-        let zoomControls = document.getElementById('gantt-zoom-controls');
-        if (!zoomControls) {
-            zoomControls = document.createElement('div');
-            zoomControls.id = 'gantt-zoom-controls';
-            zoomControls.style.display = 'flex';
-            zoomControls.style.justifyContent = 'flex-end';
-            zoomControls.style.alignItems = 'center';
-            zoomControls.style.gap = '0.5em';
-            zoomControls.style.margin = '0 0 0.5em 0';
-            zoomControls.innerHTML = `
-                <button id="gantt-zoom-out" title="Zoom Out" style="font-size:1.3em;padding:0.2em 0.7em;">-</button>
-                <span style="font-size:1em;">Zoom</span>
-                <button id="gantt-zoom-in" title="Zoom In" style="font-size:1.3em;padding:0.2em 0.7em;">+</button>
-            `;
-            ganttContainer.parentNode.insertBefore(zoomControls, ganttContainer);
-            document.getElementById('gantt-zoom-in').onclick = function() {
-                ganttDayWidth = Math.min(96, ganttDayWidth * 1.25);
-                renderGanttChart();
-            };
-            document.getElementById('gantt-zoom-out').onclick = function() {
-                ganttDayWidth = Math.max(4, ganttDayWidth / 1.25);
-                renderGanttChart();
-            };
-        } else {
-            zoomControls.style.display = ganttContainer.style.display === 'none' ? 'none' : 'flex';
-        }
+        // Dynamically set dayWidth to fill available width
+        let containerWidth = ganttContainer.offsetWidth || window.innerWidth || 1200;
 
-        // Helper: parse date string (YYYY-MM-DD)
+        // --- Helper functions (move outside renderGanttChart for reuse if needed) ---
         function parseDate(str) {
             if (!str) return null;
             const d = new Date(str);
             return isNaN(d) ? null : d;
         }
-
-        // Helper: add days to a date
-        function addDays(date, days) {
-            const d = new Date(date);
-            d.setDate(d.getDate() + days);
+        function addWeekdays(date, days) {
+            let d = new Date(date);
+            let added = 0;
+            while (added < days) {
+                d.setDate(d.getDate() + 1);
+                if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+            }
             return d;
         }
-
-        // Helper: get days between two dates
-        function daysBetween(a, b) {
-            return Math.round((b - a) / (1000 * 60 * 60 * 24));
+        function weekdaysBetween(a, b) {
+            let count = 0;
+            let d = new Date(a);
+            while (d < b) {
+                if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+                d.setDate(d.getDate() + 1);
+            }
+            return count;
         }
-
-        // Helper: parse estimated_duration (e.g. '5 days', '2 weeks')
         function parseDuration(str) {
             if (!str) return 1;
-            const m = str.match(/(\d+)\s*(day|week|month)s?/i);
-            if (!m) return 1;
-            const n = parseInt(m[1]);
-            if (/week/i.test(m[2])) return n * 7;
-            if (/month/i.test(m[2])) return n * 30;
-            return n;
+            str = String(str).trim();
+            if (/^\d+$/.test(str)) return parseInt(str);
+            let m = str.match(/^(\d+)\s*([dwm])$/i);
+            if (m) {
+                const n = parseInt(m[1]);
+                const u = m[2].toLowerCase();
+                if (u === 'd') return n;
+                if (u === 'w') return n * 7;
+                if (u === 'm') return n * 30;
+            }
+            m = str.match(/^(\d+)\s*(day|days|week|weeks|month|months)$/i);
+            if (m) {
+                const n = parseInt(m[1]);
+                const u = m[2].toLowerCase();
+                if (u.startsWith('day')) return n;
+                if (u.startsWith('week')) return n * 7;
+                if (u.startsWith('month')) return n * 30;
+            }
+            m = str.match(/(\d+)/);
+            if (m) return parseInt(m[1]);
+            return 1;
         }
-
-        // 1. Gather visible tasks from the tree
         function gatherTasks(ul, arr = [], parentLevel = 0) {
             ul.querySelectorAll(':scope > li').forEach(li => {
                 const meta = li._meta || {};
-                const level = meta.level || (CLASS_LABELS[parentLevel] || 'Item');
-                if (activeLayers[level]) {
-                    arr.push({
-                        name: li.querySelector('.proj-name')?.textContent.trim() || '',
-                        planned_start: meta.planned_start,
-                        estimated_duration: meta.estimated_duration,
-                        deadline: meta.deadline,
-                        level,
-                        status: meta.status,
-                        li
-                    });
-                }
+                const level = (typeof meta.level !== 'undefined' && meta.level !== null && meta.level !== '') ? meta.level : (CLASS_LABELS[parentLevel] || 'Item');
+                arr.push({
+                    name: li.querySelector('.proj-name')?.textContent.trim() || '',
+                    planned_start: meta.planned_start,
+                    estimated_duration: meta.estimated_duration,
+                    deadline: meta.deadline,
+                    level,
+                    status: meta.status,
+                    li
+                });
                 const subUl = li.querySelector('ul');
                 if (subUl) gatherTasks(subUl, arr, parentLevel + 1);
             });
             return arr;
         }
 
+        // --- Compute date range (weekdays only) ---
+    // Layout constants
+    const barHeight = 28;
+    const barGap = 12;
+    const topPad = 40;
         const tasks = gatherTasks(projectTree);
-        if (!tasks.length) {
-            ganttContainer.innerHTML = '<div style="padding:2em;text-align:center;font-size:1.2em;color:#888;">No tasks to display.</div>';
-            return;
-        }
-
-        // 2. Compute date range
         let minDate = null, maxDate = null;
         tasks.forEach(t => {
             const start = parseDate(t.planned_start);
             const dur = parseDuration(t.estimated_duration);
-            const end = start ? addDays(start, dur) : null;
+            const end = start ? addWeekdays(start, dur) : null;
             if (start && (!minDate || start < minDate)) minDate = start;
             if (end && (!maxDate || end > maxDate)) maxDate = end;
             const deadline = parseDate(t.deadline);
             if (deadline && (!maxDate || deadline > maxDate)) maxDate = deadline;
         });
+        if (!tasks.length) {
+            ganttContainer.innerHTML = '<div style="padding:2em;text-align:center;font-size:1.2em;color:#888;">No tasks to display.</div>';
+            return;
+        }
         if (!minDate || !maxDate) {
             ganttContainer.innerHTML = '<div style="padding:2em;text-align:center;font-size:1.2em;color:#888;">No valid dates to display.</div>';
             return;
         }
-
-        // 3. Render SVG Gantt chart
-    const dayWidth = ganttDayWidth;
-        const barHeight = 28;
-        const barGap = 12;
-        const leftPad = 180;
-        const topPad = 40;
-        const chartWidth = daysBetween(minDate, maxDate) * dayWidth + leftPad + 40;
-        const chartHeight = tasks.length * (barHeight + barGap) + topPad + 40;
+    const totalDays = weekdaysBetween(minDate, maxDate);
+    const leftPad = 120;
+    const rightPad = 40;
+    let dayWidth = Math.max(24, (containerWidth - leftPad - rightPad) / Math.max(1, totalDays));
+    // Chart dimensions
+    const chartWidth = totalDays * dayWidth + leftPad + rightPad;
+    const chartHeight = tasks.length * (barHeight + barGap) + topPad + 40;
+        // --- End helpers and setup ---
 
         // Time axis labels (every 7 days)
         let axisLabels = '';
-        for (let d = new Date(minDate), i = 0; d <= maxDate; d = addDays(d, 7), i++) {
-            const x = leftPad + daysBetween(minDate, d) * dayWidth;
+        // Draw axis labels for each Monday
+        let d = new Date(minDate);
+        d.setDate(d.getDate() - d.getDay() + 1); // move to next Monday
+        while (d <= maxDate) {
+            const x = leftPad + weekdaysBetween(minDate, d) * dayWidth;
             axisLabels += `<text x="${x}" y="${topPad - 10}" font-size="12" fill="#555">${d.toISOString().slice(0,10)}</text>`;
             axisLabels += `<line x1="${x}" y1="${topPad - 5}" x2="${x}" y2="${chartHeight - 20}" stroke="#eee" />`;
+            d.setDate(d.getDate() + 7);
         }
 
-        // Bars
+        // Today line
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        let todayLine = '';
+        if (today >= minDate && today <= maxDate) {
+            const tx = leftPad + weekdaysBetween(minDate, today) * dayWidth;
+            todayLine = `<line x1="${tx}" y1="${topPad - 5}" x2="${tx}" y2="${chartHeight - 20}" stroke="#00bcd4" stroke-width="2" stroke-dasharray="4,3" />`;
+            axisLabels += `<text x="${tx+2}" y="${topPad - 18}" font-size="11" fill="#00bcd4">Today</text>`;
+        }
+
+        // Bars with tooltips and click-to-edit
         let bars = '';
+        let rowBg = '';
+        const colorMap = { 'Project':'#FF8200', 'Phase':'#1E90FF', 'Feature':'#6A4FB6', 'Item':'#4BB543' };
         tasks.forEach((t, i) => {
+            // Declare once per iteration
             const start = parseDate(t.planned_start) || minDate;
             const dur = parseDuration(t.estimated_duration);
-            const end = addDays(start, dur);
+            const end = addWeekdays(start, dur);
+            // Dependency overlap warning logic
+            let hasOverlap = false;
+            if (t.li && t.li._meta && t.li._meta.dependencies) {
+                const depNames = t.li._meta.dependencies.split(',').map(s => s.trim()).filter(Boolean);
+                depNames.forEach(depName => {
+                    const depTask = tasks.find(other => other.name === depName);
+                    if (depTask) {
+                        const depStart = parseDate(depTask.planned_start) || minDate;
+                        const depDur = parseDuration(depTask.estimated_duration);
+                        const depEnd = addWeekdays(depStart, depDur);
+                        if (start < depEnd) {
+                            hasOverlap = true;
+                        }
+                    }
+                });
+            }
             const y = topPad + i * (barHeight + barGap);
-            const x = leftPad + daysBetween(minDate, start) * dayWidth;
-            const w = Math.max(1, daysBetween(start, end) * dayWidth);
+            const x = leftPad + weekdaysBetween(minDate, start) * dayWidth;
+            const w = Math.max(1, weekdaysBetween(start, end) * dayWidth);
+            // Alternating row backgrounds
+            if (i % 2 === 1) {
+                rowBg += `<rect x="0" y="${y-2}" width="100%" height="${barHeight+4}" fill="#f5f5fa" />`;
+            }
             // Color by level
-            const colorMap = { 'Project':'#FF8200', 'Phase':'#1E90FF', 'Feature':'#6A4FB6', 'Item':'#4BB543' };
-            const fill = colorMap[t.level] || '#888';
-            bars += `<rect x="${x}" y="${y}" width="${w}" height="${barHeight}" rx="6" fill="${fill}" fill-opacity="0.85" />`;
-            bars += `<text x="${x+8}" y="${y+barHeight/2+5}" font-size="15" fill="#fff">${t.name}</text>`;
-            // Deadline marker
+            let fill = colorMap[t.level] || '#888';
+            // Overdue highlight
+            let isOverdue = false;
             if (t.deadline) {
-                const dx = leftPad + daysBetween(minDate, parseDate(t.deadline)) * dayWidth;
-                bars += `<line x1="${dx}" y1="${y}" x2="${dx}" y2="${y+barHeight}" stroke="#d00" stroke-width="2" />`;
-            }
-        });
-
-        // SVG wrapper
-        ganttContainer.innerHTML = `<div style="overflow-x:auto;"><svg width="${chartWidth}" height="${chartHeight}" style="background:#faf9f6;border-radius:10px;box-shadow:0 2px 8px #0001;">
-            <g>${axisLabels}</g>
-            <g>${bars}</g>
-        </svg></div>`;
-    }
-
-    // --- Gantt Chart View Toggle ---
-    if (ganttBtn && ganttContainer && projectTree && treeHeaders && ganttLayerControls) {
-        ganttBtn.addEventListener('click', function() {
-            const isGanttVisible = ganttContainer.style.display !== 'none';
-            if (!isGanttVisible) {
-                // Show Gantt, hide tree
-                ganttContainer.style.display = 'block';
-                ganttLayerControls.style.display = 'flex';
-                projectTree.style.display = 'none';
-                treeHeaders.style.display = 'none';
-                renderGanttLayerControls();
-                renderGanttChart();
-                ganttBtn.textContent = 'Tree View';
-            } else {
-                // Show tree, hide Gantt
-                ganttContainer.style.display = 'none';
-                ganttLayerControls.style.display = 'none';
-                projectTree.style.display = 'block';
-                treeHeaders.style.display = 'flex';
-                ganttBtn.textContent = 'Gantt Chart View';
-            }
-        });
-        // Ensure initial state is tree view
-        ganttContainer.style.display = 'none';
-        ganttLayerControls.style.display = 'none';
-        projectTree.style.display = 'block';
-        treeHeaders.style.display = 'flex';
-    }
-
-
-    function renderGanttLayerControls() {
-        if (!ganttLayerControls) return;
-        ganttLayerControls.innerHTML = '';
-        ganttLayerControls.style.display = 'flex';
-        ganttLayerControls.style.gap = '1.5em';
-        ganttLayerControls.style.alignItems = 'center';
-        ganttLayerControls.style.justifyContent = 'center';
-        ganttLayerControls.style.fontSize = '1.1em';
-        ganttLayerControls.style.fontWeight = 'bold';
-        ganttLayerControls.style.background = '#f7f7f7';
-        ganttLayerControls.style.borderRadius = '8px';
-        ganttLayerControls.style.padding = '0.7em 1.5em';
-        ganttLayerControls.innerHTML = '<span style="margin-right:1em;">Show Layers:</span>';
-        CLASS_LABELS.forEach(label => {
-            const btn = document.createElement('button');
-            btn.textContent = label;
-            btn.style.margin = '0 0.2em';
-            btn.style.padding = '0.4em 1.2em';
-            btn.style.border = 'none';
-            btn.style.borderRadius = '5px';
-            btn.style.background = activeLayers[label] ? '#FF8200' : '#e0e0e0';
-            btn.style.color = activeLayers[label] ? '#fff' : '#333';
-            btn.style.fontWeight = 'bold';
-            btn.style.cursor = 'pointer';
-            btn.onclick = function() {
-                activeLayers[label] = !activeLayers[label];
-                // If none selected, always keep at least one (default to Item)
-                if (!Object.values(activeLayers).some(v => v)) {
-                    activeLayers['Item'] = true;
+                const deadlineDate = parseDate(t.deadline);
+                if (deadlineDate && end > deadlineDate) {
+                    fill = '#d32f2f';
+                    isOverdue = true;
                 }
-                renderGanttChart();
-            };
-            ganttLayerControls.appendChild(btn);
-        });
-    }
-
-    // --- All remaining code moved inside DOMContentLoaded ---
-
-    function flattenProjects(ul, arr = []) {
-        ul.querySelectorAll(':scope > li').forEach(li => {
-            const name = li.querySelector('.proj-name')?.textContent.trim();
-            if (name) {
-                arr.push({
-                    id: li.dataset.projectId,
-                    name
-                });
             }
-            const subUl = li.querySelector('ul');
-            if (subUl) flattenProjects(subUl, arr);
-        });
-        return arr;
-    }
+            // Tooltip content
+            const tooltip = [
+                `<b>${t.name}</b>`,
+                t.level ? `Type: ${t.level}` : '',
+                t.planned_start ? `Start: ${t.planned_start}` : '',
+                t.estimated_duration ? `Est: ${t.estimated_duration}` : '',
+                t.deadline ? `Deadline: ${t.deadline}` : '',
+                t.status ? `Status: ${t.status}` : '',
+                t.description ? `Desc: ${t.description}` : ''
+            ].filter(Boolean).join('<br>');
+            // Add icon for node-level (no extra box/label)
+            let borderStyle = '';
+            let icon = '';
+            if (t.level === 'Phase') {
+                borderStyle = 'stroke:#1E90FF;stroke-width:3;stroke-dasharray:none;';
+                icon = '\u25A0'; // solid square
+            } else if (t.level === 'Feature') {
+                borderStyle = 'stroke:#6A4FB6;stroke-width:3;stroke-dasharray:8,4;';
+                icon = '\u2605'; // star
+            } else if (t.level === 'Item') {
+                borderStyle = 'stroke:#4BB543;stroke-width:2;stroke-dasharray:2,2;';
+                icon = '\u25CF'; // solid circle
+            } else {
+                borderStyle = '';
+                icon = '';
+            }
+            // Bar with data-index for click (no extra box/label)
+            bars += `<g class="gantt-bar-group" data-index="${i}">
+                <rect x="${x}" y="${y}" width="${w}" height="${barHeight}" rx="8" fill="${fill}" fill-opacity="0.92" style="cursor:pointer;${borderStyle};filter:drop-shadow(0 2px 6px #0002);stroke:#222;stroke-opacity:0.12;" class="gantt-bar-rect"/>
+                <text x="${x-20}" y="${y+barHeight/2+6}" font-size="15" fill="#333" font-weight="bold" text-anchor="end" style="font-family:'Segoe UI',Arial,sans-serif;">${icon}</text>
+                <title>${tooltip.replace(/<br>/g,'\n')}${hasOverlap ? '\n⚠ Overlaps dependency' : ''}</title>
+                <text x="${x+10}" y="${y+barHeight/2+5}" font-size="15" fill="#fff" font-weight="bold" style="font-family:'Segoe UI',Arial,sans-serif;text-shadow:0 1px 2px #0007;">${t.name}</text>
+                ${hasOverlap ? `<text x="${x+w-18}" y="${y+18}" font-size="18" fill="#d32f2f" title="Overlaps dependency" style="font-weight:bold;">&#9888;</text>` : ''}
+            </g>`;
+        // Deadline marker
+        if (t.deadline) {
+            // You can add deadline marker rendering here if needed
+        }
+            }); // This closes the tasks.forEach((t, i) => { ... }) loop
 
-    function populateProjectSelect() {
-        if (!projectSelect) return;
-        // Fetch project tree from server to get IDs
-        fetch('/api/load_tree').then(r => r.json()).then(data => {
-            projectSelect.innerHTML = '';
-            function addOptions(nodes) {
-                nodes.forEach(node => {
-                    const opt = document.createElement('option');
-                    opt.value = node.id;
-                    opt.textContent = node.name;
-                    projectSelect.appendChild(opt);
-                    if (node.children) addOptions(node.children);
-                });
+    // SVG wrapper with event delegation for click-to-edit
+    ganttContainer.innerHTML = `<div style="overflow-x:auto;position:relative;">
+        <style>
+        .gantt-bar-rect:hover { filter: drop-shadow(0 4px 12px #0004) brightness(1.08); stroke: #222; stroke-opacity: 0.25; }
+        #gantt-container { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; margin: 0; padding: 0; }
+        </style>
+        <svg id="gantt-svg" width="100%" viewBox="0 0 ${chartWidth} ${chartHeight}" height="${chartHeight}" style="background:#f7f8fa;border-radius:12px;box-shadow:0 2px 12px #0002; width:100%; min-width:0;">
+            <g>${rowBg}</g>
+            <g>${axisLabels}</g>
+            ${todayLine}
+            <g>${bars}</g>
+        </svg>
+
+            if (group && group.dataset.index) {
+    }
+                projectTree.style.display = 'none';
+        ganttContainer.style.display = 'none';
             }
             addOptions(data.tree || []);
-            if (projectSelect.options.length) {
-                projectSelect.selectedIndex = 0;
-                listFilesForSelected();
-            }
-        });
-    }
-
-    function listFilesForSelected() {
-        if (!projectSelect || !fileListDiv) return;
-        const pid = projectSelect.value;
-        if (!pid) {
-            fileListDiv.textContent = '';
-            return;
-        }
-        fetch('/api/list_files/' + pid)
-            .then(r => r.json())
-            .then(data => {
-                if (data.files && data.files.length) {
-                    fileListDiv.innerHTML = '<b>Files:</b> ' + data.files.map(f =>
-                        `<span style="margin-right:0.5em;">${f} <button data-fname="${f}" class="delete-file-btn" title="Delete">🗑</button></span>`
-                    ).join('');
-                    // Add event listeners for delete buttons
                     fileListDiv.querySelectorAll('.delete-file-btn').forEach(btn => {
-                        btn.onclick = function() {
-                            if (confirm('Delete file ' + btn.dataset.fname + '?')) {
-                                fetch('/api/delete_file', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ filename: btn.dataset.fname, project_id: pid })
-                                })
-                                .then(r => r.json())
-                                .then(data => {
-                                    if (data.status === 'success') {
-                                        listFilesForSelected();
-                                    } else {
-                                        alert('Delete failed: ' + (data.error || 'Unknown error'));
-                                    }
-                                });
-                            }
-                        };
                     });
-                } else {
-                    fileListDiv.textContent = 'No files uploaded for this project.';
-                }
-            });
-    }
-
-    if (projectSelect) {
-        projectSelect.addEventListener('change', listFilesForSelected);
-        populateProjectSelect();
-    }
-
-    if (uploadForm) {
-        uploadForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const fileInput = document.getElementById('file-input');
-            const statusDiv = document.getElementById('upload-status');
             if (!fileInput.files.length || !projectSelect.value) {
-                statusDiv.textContent = 'Select a project and file.';
-                return;
-            }
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            formData.append('project_id', projectSelect.value);
-            fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            })
             .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    statusDiv.textContent = 'File uploaded: ' + data.filename;
-                    listFilesForSelected();
-                } else {
-                    statusDiv.textContent = 'Upload failed: ' + (data.error || 'Unknown error');
-                }
-            })
-            .catch(() => {
-                statusDiv.textContent = 'Upload failed.';
-            });
-        });
-    }
-
-    // Helper: check if file is image
-    function isImageFile(filename) {
-        return /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filename);
-    }
-    function isPdfFile(filename) {
-        return /\.(pdf)$/i.test(filename);
-    }
-
-    // Show gallery for a project id
-    function showGalleryForProject(pid) {
-// (removed duplicate DOMContentLoaded and duplicate declarations)
-        if (!fileGalleryDiv) return;
-        fileGalleryDiv.innerHTML = '';
-        if (!pid) return;
-        fetch('/api/list_files/' + pid)
-            .then(r => r.json())
-            .then(data => {
-                if (data.files && data.files.length) {
-                    data.files.forEach(f => {
-                        const item = document.createElement('div');
-                        item.className = 'file-item';
-                        let content;
-                        const fileUrl = '/uploads/' + encodeURIComponent(f);
-                        if (isImageFile(f)) {
-                            content = document.createElement('img');
-                            content.src = fileUrl;
-                            content.className = 'thumb';
-                            content.alt = f;
-                            content.style.cursor = 'pointer';
-                            content.onclick = function() { openFileModal('image', fileUrl, f); };
-                        } else if (isPdfFile(f)) {
                             content = document.createElement('div');
                             content.className = 'thumb';
-                            content.style.display = 'flex';
-                            content.style.alignItems = 'center';
                             content.style.justifyContent = 'center';
-                            content.style.background = '#f3f3f3';
-                            content.style.cursor = 'pointer';
                             content.innerHTML = '<span style="font-size:2em;">📄</span>';
-                            content.onclick = function() { openFileModal('pdf', fileUrl, f); };
-                        } else {
-                            content = document.createElement('a');
-                            content.href = fileUrl;
-                            content.target = '_blank';
-                            content.className = 'thumb';
-                            content.style.display = 'flex';
-                            content.style.alignItems = 'center';
-                            content.style.justifyContent = 'center';
-                            content.style.background = '#f3f3f3';
-                            content.innerHTML = '<span style="font-size:2em;">📄</span>';
-                        }
                         item.appendChild(content);
-                        const label = document.createElement('div');
+                }); // This closes the DOMContentLoaded event handler
                         label.className = 'file-label';
                         label.textContent = f;
                         item.appendChild(label);
@@ -468,6 +324,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             projectTree.appendChild(li);
             form.reset();
+            setTimeout(() => autoSaveTree(true), 100);
         }
     });
 
@@ -475,7 +332,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     // Auto-save function
-    function autoSaveTree() {
+    function autoSaveTree(reload = false) {
         updateParentDates(projectTree);
         const treeData = serializeTree(projectTree);
         fetch('/api/save_tree', {
@@ -483,43 +340,40 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tree: treeData })
         }).then(r => r.json()).then(data => {
-            // Optionally, show a subtle saved indicator
-            // console.log('Tree auto-saved');
-            // Optionally reload tree from backend for correct IDs
-            fetch('/api/load_tree').then(r => r.json()).then(data => {
-                projectTree.innerHTML = '';
-                if (data.tree) {
-                    renderTree(data.tree, projectTree);
-                }
-                if (typeof populateProjectSelect === 'function') {
-                    populateProjectSelect();
-                }
-            });
-        });
-    }
-
-    // Listen for changes to the tree and auto-save
-    function setupAutoSaveListeners() {
-        // Add project
-        form.addEventListener('submit', function(e) {
-            setTimeout(autoSaveTree, 100); // after DOM update
-        });
-        // Drag and drop
-        projectTree.addEventListener('drop', function(e) {
-            setTimeout(autoSaveTree, 100);
-        });
-        // Rename, delete, edit meta, add sub-project
-        projectTree.addEventListener('click', function(e) {
-            if (
-                e.target.matches('button') ||
-                e.target.classList.contains('proj-name')
-            ) {
-                setTimeout(autoSaveTree, 100);
+            if (reload) {
+                fetch('/api/load_tree').then r => r.json()).then(data => {
+                    projectTree.innerHTML = '';
+                    if (data.tree) {
+                        renderTree(data.tree, projectTree);
+                    }
+                    if (typeof populateProjectSelect === 'function') {
+                        populateProjectSelect();
+                    }
+                });
             }
         });
     }
 
+    // Listen for changes to the tree and auto-save
+
+    function setupAutoSaveListeners() {
+        // Only add listeners if elements exist
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                setTimeout(autoSaveTree, 100); // after DOM update
+            });
+        }
+        if (projectTree) {
+            projectTree.addEventListener('drop', function(e) {
+                setTimeout(autoSaveTree, 100);
+            });
+        }
+        // Remove: generic click handler that triggers autoSaveTree on every click
+        // Only call autoSaveTree in specific handlers for add, edit, delete, drag/drop, etc.
+    }
+
     setupAutoSaveListeners();
+
 
     document.getElementById('load-tree').onclick = function() {
         console.log('Load Tree button clicked');
@@ -530,11 +384,15 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(data => {
                 console.log('Loaded tree data:', data);
-                projectTree.innerHTML = '';
-                if (data.tree) {
-                    renderTree(data.tree, projectTree);
+                if (projectTree) {
+                    projectTree.innerHTML = '';
+                    if (data.tree) {
+                        renderTree(data.tree, projectTree);
+                    } else {
+                        console.warn('No tree data found in response');
+                    }
                 } else {
-                    console.warn('No tree data found in response');
+                    console.warn('projectTree element not found, skipping render.');
                 }
             })
             .catch(err => {
@@ -560,7 +418,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 status: li._meta?.status || '',
                 dependencies: li._meta?.dependencies || '',
                 milestones: li._meta?.milestones || '',
-                level: li._meta?.level || (CLASS_LABELS[level] || 'Item'),
+                level: (typeof li._meta?.level !== 'undefined' && li._meta?.level !== null && li._meta?.level !== '') ? li._meta.level : (CLASS_LABELS[level] || 'Item'),
                 external: li._meta?.external === true
             };
             if (li.dataset.projectId) {
@@ -572,23 +430,34 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             arr.push(node);
         });
+        // Debug: log outgoing tree data with IDs
+        if (level === 0) {
+            console.log('[serializeTree] Outgoing tree data:', JSON.stringify(arr, null, 2));
+        }
         return arr;
     }
 
 
     function renderTree(nodes, parentUl, level = 0) {
         nodes.forEach(node => {
-            // Only assign default classification if not set
-            if (!node.level) node.level = CLASS_LABELS[level] || 'Item';
+            // Always assign classification by hierarchy if not set or null/empty
+            if (typeof node.level === 'undefined' || node.level === null || node.level === '') node.level = CLASS_LABELS[level] || 'Item';
             const li = createProjectNode(node.name, node, level);
             if (node.id) {
+                li.dataset.projectId = node.id;
+            }
+            // Defensive: always set li.dataset.projectId if node.id exists
+            if (typeof node.id !== 'undefined' && node.id !== null) {
                 li.dataset.projectId = node.id;
             }
             // Add click event to show gallery
             li.addEventListener('click', function(e) {
                 // Only trigger if clicking the li or proj-name, not buttons
                 if (e.target === li || e.target.classList.contains('proj-name')) {
-                    showGalleryForProject(node.id);
+                    e.stopPropagation();
+                    if (node.id) {
+                        showGalleryForProject(node.id);
+                    }
                 }
             });
             parentUl.appendChild(li);
@@ -616,9 +485,12 @@ document.addEventListener('DOMContentLoaded', function() {
             status: meta.status || 'Not Started',
             dependencies: meta.dependencies || '',
             milestones: meta.milestones || '',
-            level: meta.level || (CLASS_LABELS[level] || 'Item'),
+            level: (typeof meta.level !== 'undefined' && meta.level !== null && meta.level !== '') ? meta.level : (CLASS_LABELS[level] || 'Item'),
             external: meta.external === true
         };
+        if (meta.id) {
+            li.dataset.projectId = meta.id;
+        }
 
     // (Removed classification label from node display)
 
@@ -709,9 +581,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     const ul = document.createElement('ul');
                     li.appendChild(ul);
                 }
-                const subLi = createProjectNode(subName, {}, (li._meta.level ? (['Project','Phase','Feature','Item'].indexOf(li._meta.level)+1) : 1));
+                // Determine next level string
+                const parentLevelIdx = (li._meta.level ? (['Project','Phase','Feature','Item'].indexOf(li._meta.level)) : 0);
+                const nextLevel = ['Project','Phase','Feature','Item'][Math.min(parentLevelIdx+1, 3)];
+                const subLi = createProjectNode(subName, { level: nextLevel }, parentLevelIdx+1);
                 li.querySelector('ul').appendChild(subLi);
-                setTimeout(autoSaveTree, 100);
+                setTimeout(() => autoSaveTree(true), 100);
             }
         };
         li.appendChild(addSubBtn);
@@ -727,71 +602,71 @@ document.addEventListener('DOMContentLoaded', function() {
             openEditNodeModal(li, nameSpan, updateMetaSpan);
         };
         li.appendChild(metaBtn);
-// --- Modal logic for editing node details ---
-const editNodeModal = document.getElementById('edit-node-modal');
-const editNodeForm = document.getElementById('edit-node-form');
-const editNodeModalClose = document.getElementById('edit-node-modal-close');
-let editNodeTargetLi = null;
-let editNodeNameSpan = null;
-let editNodeUpdateMeta = null;
+    // --- Modal logic for editing node details ---
+    const editNodeModal = document.getElementById('edit-node-modal');
+    const editNodeForm = document.getElementById('edit-node-form');
+    const editNodeModalClose = document.getElementById('edit-node-modal-close');
+    let editNodeTargetLi = null;
+    let editNodeNameSpan = null;
+    let editNodeUpdateMeta = null;
 
-function openEditNodeModal(li, nameSpan, updateMetaSpan) {
-    editNodeTargetLi = li;
-    editNodeNameSpan = nameSpan;
-    editNodeUpdateMeta = updateMetaSpan;
-    document.getElementById('edit-node-name').value = nameSpan.textContent;
-    document.getElementById('edit-node-desc').value = li._meta.description || '';
-    document.getElementById('edit-node-planned-start').value = li._meta.planned_start || '';
-    document.getElementById('edit-node-estimated-duration').value = li._meta.estimated_duration || '';
-    document.getElementById('edit-node-deadline').value = li._meta.deadline || '';
-    document.getElementById('edit-node-status').value = li._meta.status || 'Not Started';
-    document.getElementById('edit-node-deps').value = li._meta.dependencies || '';
-    document.getElementById('edit-node-milestones').value = li._meta.milestones || '';
-    document.getElementById('edit-node-level').value = li._meta.level || 'Project';
-    document.getElementById('edit-node-external').checked = li._meta.external === true;
-    editNodeModal.style.display = 'flex';
-}
-
-editNodeModalClose.onclick = function() {
-    editNodeModal.style.display = 'none';
-};
-editNodeModal.onclick = function(e) {
-    if (e.target === editNodeModal) editNodeModal.style.display = 'none';
-};
-if (editNodeForm) {
-    editNodeForm.onsubmit = function(e) {
-        e.preventDefault();
-        if (!editNodeTargetLi || !editNodeNameSpan || !editNodeUpdateMeta) return;
-        editNodeNameSpan.textContent = document.getElementById('edit-node-name').value;
-        editNodeTargetLi._meta.description = document.getElementById('edit-node-desc').value;
-        editNodeTargetLi._meta.planned_start = document.getElementById('edit-node-planned-start').value;
-        editNodeTargetLi._meta.estimated_duration = document.getElementById('edit-node-estimated-duration').value;
-        editNodeTargetLi._meta.deadline = document.getElementById('edit-node-deadline').value;
-        editNodeTargetLi._meta.status = document.getElementById('edit-node-status').value;
-        editNodeTargetLi._meta.dependencies = document.getElementById('edit-node-deps').value;
-        editNodeTargetLi._meta.milestones = document.getElementById('edit-node-milestones').value;
-        editNodeTargetLi._meta.level = document.getElementById('edit-node-level').value;
-        editNodeTargetLi._meta.external = document.getElementById('edit-node-external').checked;
-        // Update classification label if present
-        const classSpan = editNodeTargetLi.querySelector('.proj-class');
-        if (classSpan) classSpan.textContent = editNodeTargetLi._meta.level;
-        editNodeUpdateMeta();
-        editNodeModal.style.display = 'none';
-        // Show 'Saved!' message
-        const savedMsg = document.getElementById('edit-node-saved');
-        if (savedMsg) {
-            savedMsg.style.display = 'block';
-            savedMsg.style.opacity = '1';
-            setTimeout(() => {
-                savedMsg.style.transition = 'opacity 0.7s';
-                savedMsg.style.opacity = '0';
-                setTimeout(() => { savedMsg.style.display = 'none'; savedMsg.style.transition = ''; }, 700);
-            }, 900);
-        }
-    console.log('[Edit Modal] Saved node, triggering autoSaveTree');
-    setTimeout(autoSaveTree, 100);
+    window.openEditNodeModal = function(li, nameSpan, updateMetaSpan) {
+        editNodeTargetLi = li;
+        editNodeNameSpan = nameSpan;
+        editNodeUpdateMeta = updateMetaSpan;
+        document.getElementById('edit-node-name').value = nameSpan.textContent;
+        document.getElementById('edit-node-desc').value = li._meta.description || '';
+        document.getElementById('edit-node-planned-start').value = li._meta.planned_start || '';
+        document.getElementById('edit-node-estimated-duration').value = li._meta.estimated_duration || '';
+        document.getElementById('edit-node-deadline').value = li._meta.deadline || '';
+        document.getElementById('edit-node-status').value = li._meta.status || 'Not Started';
+        document.getElementById('edit-node-deps').value = li._meta.dependencies || '';
+        document.getElementById('edit-node-milestones').value = li._meta.milestones || '';
+        document.getElementById('edit-node-level').value = li._meta.level || 'Project';
+        document.getElementById('edit-node-external').checked = li._meta.external === true;
+        editNodeModal.style.display = 'flex';
     };
-}
+
+    editNodeModalClose.onclick = function() {
+        editNodeModal.style.display = 'none';
+    };
+    editNodeModal.onclick = function(e) {
+        if (e.target === editNodeModal) editNodeModal.style.display = 'none';
+    };
+    if (editNodeForm) {
+        editNodeForm.onsubmit = function(e) {
+            e.preventDefault();
+            if (!editNodeTargetLi || !editNodeNameSpan || !editNodeUpdateMeta) return;
+            editNodeNameSpan.textContent = document.getElementById('edit-node-name').value;
+            editNodeTargetLi._meta.description = document.getElementById('edit-node-desc').value;
+            editNodeTargetLi._meta.planned_start = document.getElementById('edit-node-planned-start').value;
+            editNodeTargetLi._meta.estimated_duration = document.getElementById('edit-node-estimated-duration').value;
+            editNodeTargetLi._meta.deadline = document.getElementById('edit-node-deadline').value;
+            editNodeTargetLi._meta.status = document.getElementById('edit-node-status').value;
+            editNodeTargetLi._meta.dependencies = document.getElementById('edit-node-deps').value;
+            editNodeTargetLi._meta.milestones = document.getElementById('edit-node-milestones').value;
+            editNodeTargetLi._meta.level = document.getElementById('edit-node-level').value;
+            editNodeTargetLi._meta.external = document.getElementById('edit-node-external').checked;
+            // Update classification label if present
+            const classSpan = editNodeTargetLi.querySelector('.proj-class');
+            if (classSpan) classSpan.textContent = editNodeTargetLi._meta.level;
+            editNodeUpdateMeta();
+            editNodeModal.style.display = 'none';
+            // Show 'Saved!' message
+            const savedMsg = document.getElementById('edit-node-saved');
+            if (savedMsg) {
+                savedMsg.style.display = 'block';
+                savedMsg.style.opacity = '1';
+                setTimeout(() => {
+                    savedMsg.style.transition = 'opacity 0.7s';
+                    savedMsg.style.opacity = '0';
+                    setTimeout(() => { savedMsg.style.display = 'none'; savedMsg.style.transition = ''; }, 700);
+                }, 900);
+            }
+            console.log('[Edit Modal] Saved node, triggering autoSaveTree');
+            setTimeout(() => autoSaveTree(false), 100);
+        };
+    }
 
         // Rename button
         const renameBtn = document.createElement('button');
@@ -804,7 +679,7 @@ if (editNodeForm) {
             if (newName) {
                 nameSpan.textContent = newName;
                 console.log('[Rename] Renamed node, triggering autoSaveTree');
-                setTimeout(autoSaveTree, 100);
+                setTimeout(() => autoSaveTree(false), 100);
             }
         };
         li.appendChild(renameBtn);
@@ -822,73 +697,14 @@ if (editNodeForm) {
         };
         li.appendChild(deleteBtn);
 
+
         return li;
     }
 
+// Ensure the main DOMContentLoaded handler is closed
+}); // <-- This closes the DOMContentLoaded event handler
+// Ensure all blocks are closed
 
-    // --- Update parent dates based on children ---
-function updateParentDates(ul) {
-    // Helper: parse date string (YYYY-MM-DD)
-    function parseDate(str) {
-        if (!str) return null;
-        const d = new Date(str);
-        return isNaN(d) ? null : d;
-    }
-    // Helper: add days to a date
-    function addDays(date, days) {
-        const d = new Date(date);
-        d.setDate(d.getDate() + days);
-        return d;
-    }
-    // Helper: parse estimated_duration (e.g. '5 days', '2 weeks')
-    function parseDuration(str) {
-        if (!str) return 1;
-        const m = str.match(/(\d+)\s*(day|week|month)s?/i);
-        if (!m) return 1;
-        const n = parseInt(m[1]);
-        if (/week/i.test(m[2])) return n * 7;
-        if (/month/i.test(m[2])) return n * 30;
-        return n;
-    }
-    ul.querySelectorAll(':scope > li').forEach(li => {
-        const subUl = li.querySelector('ul');
-        if (subUl) {
-            updateParentDates(subUl);
-            // Gather children's start and end dates
-            let minStart = null, maxEnd = null;
-            subUl.querySelectorAll(':scope > li').forEach(childLi => {
-                const meta = childLi._meta || {};
-                const start = parseDate(meta.planned_start);
-                const dur = parseDuration(meta.estimated_duration);
-                const end = start ? addDays(start, dur) : null;
-                if (start && (!minStart || start < minStart)) minStart = start;
-                if (end && (!maxEnd || end > maxEnd)) maxEnd = end;
-            });
-            if (minStart) li._meta.planned_start = minStart.toISOString().slice(0,10);
-            if (maxEnd) {
-                // Set estimated_duration so that end = planned_start + estimated_duration
-                const parentStart = parseDate(li._meta.planned_start);
-                if (parentStart) {
-                    const days = Math.max(1, Math.round((maxEnd - parentStart) / (1000*60*60*24)));
-                    li._meta.estimated_duration = days + ' days';
-                }
-            }
-        }
-    });
-}
-
-    // Optionally: show gallery for selected project in dropdown on load
-
-    if (projectSelect) {
-        projectSelect.addEventListener('change', function() {
-            listFilesForSelected();
-            showGalleryForProject(projectSelect.value);
-        });
-        // Show for initial selection
-        showGalleryForProject(projectSelect.value);
-    }
-
-}); // <-- Properly close DOMContentLoaded handler
 
 
 
