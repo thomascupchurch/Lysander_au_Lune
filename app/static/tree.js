@@ -1,21 +1,71 @@
-// --- Gantt Chart View ---
+// --- Gantt Chart View and Main Tree Logic ---
 document.addEventListener('DOMContentLoaded', function() {
+    // Declare all DOM elements at the top for global access
     const ganttBtn = document.getElementById('toggle-gantt');
     const ganttContainer = document.getElementById('gantt-container');
-    const projectTreeUl = document.getElementById('project-tree');
+    const projectTree = document.getElementById('project-tree');
     const treeHeaders = document.getElementById('tree-headers');
+    const form = document.getElementById('add-project-form');
+    const fileGalleryDiv = document.getElementById('file-gallery');
+    const uploadForm = document.getElementById('upload-form');
+    const projectSelect = document.getElementById('project-select');
+    const fileListDiv = document.getElementById('file-list');
 
-    if (ganttBtn && ganttContainer && projectTreeUl) {
+    const ganttLayerControls = document.getElementById('gantt-layer-controls');
+    // ...existing code...
+    let activeLayers = { 'Item': true, 'Feature': false, 'Phase': false, 'Project': false };
+
+    function renderGanttLayerControls() {
+        if (!ganttLayerControls) return;
+        ganttLayerControls.innerHTML = '';
+        ganttLayerControls.style.display = 'flex';
+        ganttLayerControls.style.gap = '1.5em';
+        ganttLayerControls.style.alignItems = 'center';
+        ganttLayerControls.style.justifyContent = 'center';
+        ganttLayerControls.style.fontSize = '1.1em';
+        ganttLayerControls.style.fontWeight = 'bold';
+        ganttLayerControls.style.background = '#f7f7f7';
+        ganttLayerControls.style.borderRadius = '8px';
+        ganttLayerControls.style.padding = '0.7em 1.5em';
+        ganttLayerControls.innerHTML = '<span style="margin-right:1em;">Show Layers:</span>';
+        CLASS_LABELS.forEach(label => {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            btn.style.margin = '0 0.2em';
+            btn.style.padding = '0.4em 1.2em';
+            btn.style.border = 'none';
+            btn.style.borderRadius = '5px';
+            btn.style.background = activeLayers[label] ? '#FF8200' : '#e0e0e0';
+            btn.style.color = activeLayers[label] ? '#fff' : '#333';
+            btn.style.fontWeight = 'bold';
+            btn.style.cursor = 'pointer';
+            btn.onclick = function() {
+                activeLayers[label] = !activeLayers[label];
+                // If none selected, always keep at least one (default to Item)
+                if (!Object.values(activeLayers).some(v => v)) {
+                    activeLayers['Item'] = true;
+                }
+                renderGanttLayerControls();
+                renderGanttChart();
+            };
+            ganttLayerControls.appendChild(btn);
+        });
+    }
+
+    if (ganttBtn && ganttContainer && projectTree) {
         ganttBtn.onclick = function() {
             if (ganttContainer.style.display === 'none') {
                 ganttContainer.style.display = 'block';
-                projectTreeUl.style.display = 'none';
+                ganttLayerControls.style.display = 'flex';
+                projectTree.style.display = 'none';
                 if (treeHeaders) treeHeaders.style.visibility = 'hidden';
+                renderGanttLayerControls();
                 renderGanttChart();
                 ganttBtn.textContent = 'Tree View';
             } else {
                 ganttContainer.style.display = 'none';
-                projectTreeUl.style.display = '';
+                ganttLayerControls.style.display = 'none';
+                projectTree.style.display = '';
                 if (treeHeaders) treeHeaders.style.visibility = 'visible';
                 ganttBtn.textContent = 'Gantt Chart View';
             }
@@ -23,15 +73,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function flattenTreeForGantt(nodes, arr = [], parentName = '', level = 0) {
-        const CLASS_LABELS = ['Project', 'Phase', 'Feature', 'Item'];
         nodes.forEach(node => {
             arr.push({
                 name: node.name,
-                start: node.deadline || '',
+                start: node.planned_start || '',
                 end: node.deadline || '',
                 status: node.status || '',
                 parent: parentName,
-                level: node.level || CLASS_LABELS[level] || 'Item'
+                level: node.level || CLASS_LABELS[level] || 'Item',
+                estimated_duration: node.estimated_duration || ''
             });
             if (node.children && node.children.length) {
                 flattenTreeForGantt(node.children, arr, node.name, level + 1);
@@ -48,29 +98,119 @@ document.addEventListener('DOMContentLoaded', function() {
                 ganttContainer.textContent = 'No data for Gantt chart.';
                 return;
             }
-            // Simple Gantt: table with bars
-            const table = document.createElement('table');
-            table.style.width = '100%';
-            table.style.background = '#fff';
-            table.style.borderCollapse = 'collapse';
-            const thead = document.createElement('thead');
-            thead.innerHTML = '<tr><th>Classification</th><th>Task</th><th>Status</th><th>Deadline</th><th>Bar</th></tr>';
-            table.appendChild(thead);
-            const tbody = document.createElement('tbody');
+            // Visual Gantt: Layered bar chart
+            // Group by level
+            const grouped = {};
+            CLASS_LABELS.forEach(l => grouped[l] = []);
             flat.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${row.level}</td><td>${row.name}</td><td>${row.status}</td><td>${row.end}</td><td><div style="background:#FF8200;height:18px;width:60%;border-radius:4px;"></div></td>`;
-                tbody.appendChild(tr);
+                if (grouped[row.level]) grouped[row.level].push(row);
             });
-            table.appendChild(tbody);
-            ganttContainer.appendChild(table);
+            // Find min/max dates for scaling
+            const allDates = flat.map(r => r.start).concat(flat.map(r => r.end)).filter(Boolean);
+            const minDate = allDates.length ? new Date(Math.min(...allDates.map(d => new Date(d).getTime()))) : new Date();
+            const maxDate = allDates.length ? new Date(Math.max(...allDates.map(d => new Date(d).getTime()))) : new Date();
+            const dayMs = 24*60*60*1000;
+            const totalDays = Math.max(1, Math.round((maxDate - minDate) / dayMs));
+
+            // Chart container
+            const chart = document.createElement('div');
+            chart.style.position = 'relative';
+            chart.style.width = '100%';
+            chart.style.minHeight = '400px';
+            chart.style.background = '#fff';
+            chart.style.borderRadius = '10px';
+            chart.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)';
+            chart.style.padding = '2em 1em 2em 1em';
+            chart.style.overflowX = 'auto';
+
+            // Layered bars
+            CLASS_LABELS.forEach((level, i) => {
+                const layer = document.createElement('div');
+                layer.style.position = 'relative';
+                layer.style.height = '48px';
+                layer.style.marginBottom = '0.5em';
+                layer.style.opacity = activeLayers[level] ? '1' : '0.25';
+                layer.style.transition = 'opacity 0.3s';
+                grouped[level].forEach(row => {
+                    let bar = document.createElement('div');
+                    if (row.start && row.end) {
+                        const start = new Date(row.start);
+                        const end = new Date(row.end);
+                        const left = ((start - minDate) / (dayMs * totalDays)) * 100;
+                        const width = Math.max(2, ((end - start) / (dayMs * totalDays)) * 100);
+                        bar.style.position = 'absolute';
+                        bar.style.left = left + '%';
+                        bar.style.width = width + '%';
+                        bar.style.background = level === 'Item' ? '#FF8200' : (level === 'Feature' ? '#4B4B4B' : (level === 'Phase' ? '#0074D9' : '#aaa'));
+                        bar.title = `${row.name}\n${level}\n${row.status ? 'Status: ' + row.status + '\n' : ''}${row.estimated_duration ? 'Est: ' + row.estimated_duration + '\n' : ''}${row.start ? 'Start: ' + row.start + '\n' : ''}${row.end ? 'End: ' + row.end : ''}`;
+                    } else {
+                        // Missing date(s): show warning bar at left
+                        bar.style.position = 'absolute';
+                        bar.style.left = '0';
+                        bar.style.width = '5%';
+                        bar.style.background = '#FFD700'; // gold/yellow for warning
+                        bar.title = `${row.name}\n${level}\n(Missing start or deadline)`;
+                    }
+                    bar.style.height = '38px';
+                    bar.style.top = '5px';
+                    bar.style.borderRadius = '6px';
+                    bar.style.boxShadow = activeLayers[level] ? '0 2px 8px rgba(0,0,0,0.10)' : 'none';
+                    bar.style.display = 'flex';
+                    bar.style.alignItems = 'center';
+                    bar.style.justifyContent = 'center';
+                    bar.style.color = '#fff';
+                    bar.style.fontWeight = 'bold';
+                    bar.style.fontSize = '1em';
+                    bar.style.cursor = 'pointer';
+                    bar.textContent = row.name;
+                    layer.appendChild(bar);
+                });
+                // Layer label
+                const label = document.createElement('span');
+                label.textContent = level;
+                label.style.position = 'absolute';
+                label.style.left = '0';
+                label.style.top = '-1.5em';
+                label.style.fontWeight = 'bold';
+                label.style.color = '#333';
+                label.style.fontSize = '1em';
+                chart.appendChild(label);
+                chart.appendChild(layer);
+            });
+
+            // Date axis
+            const axis = document.createElement('div');
+            axis.style.position = 'relative';
+            axis.style.height = '2em';
+            axis.style.marginTop = '1em';
+            axis.style.borderTop = '1px solid #ccc';
+            for (let d = 0; d <= totalDays; d += Math.ceil(totalDays/10)) {
+                const tick = document.createElement('div');
+                tick.style.position = 'absolute';
+                tick.style.left = ((d/totalDays)*100) + '%';
+                tick.style.top = '0';
+                tick.style.width = '1px';
+                tick.style.height = '12px';
+                tick.style.background = '#aaa';
+                axis.appendChild(tick);
+                const dateLabel = document.createElement('span');
+                dateLabel.style.position = 'absolute';
+                dateLabel.style.left = ((d/totalDays)*100) + '%';
+                dateLabel.style.top = '14px';
+                dateLabel.style.transform = 'translateX(-50%)';
+                dateLabel.style.fontSize = '0.9em';
+                dateLabel.style.color = '#333';
+                const date = new Date(minDate.getTime() + d*dayMs);
+                dateLabel.textContent = date.toISOString().slice(0,10);
+                axis.appendChild(dateLabel);
+            }
+            chart.appendChild(axis);
+            ganttContainer.appendChild(chart);
         });
     }
-});
-    // File upload and project select
-    const uploadForm = document.getElementById('upload-form');
-    const projectSelect = document.getElementById('project-select');
-    const fileListDiv = document.getElementById('file-list');
+
+    // --- All remaining code moved inside DOMContentLoaded ---
+
     function flattenProjects(ul, arr = []) {
         ul.querySelectorAll(':scope > li').forEach(li => {
             const name = li.querySelector('.proj-name')?.textContent.trim();
@@ -183,10 +323,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-document.addEventListener('DOMContentLoaded', function() {
-    const form = document.getElementById('add-project-form');
-    const projectTree = document.getElementById('project-tree');
-    const fileGalleryDiv = document.getElementById('file-gallery');
 
     // Helper: check if file is image
     function isImageFile(filename) {
@@ -198,6 +334,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Show gallery for a project id
     function showGalleryForProject(pid) {
+// (removed duplicate DOMContentLoaded and duplicate declarations)
         if (!fileGalleryDiv) return;
         fileGalleryDiv.innerHTML = '';
         if (!pid) return;
@@ -358,9 +495,12 @@ document.addEventListener('DOMContentLoaded', function() {
     function serializeTree(ul, level = 0) {
         const arr = [];
         ul.querySelectorAll(':scope > li').forEach(li => {
+            // Always read latest values from DOM and _meta
             const node = {
                 name: li.querySelector('.proj-name')?.textContent.trim() || '',
                 description: li._meta?.description || '',
+                planned_start: li._meta?.planned_start || '',
+                estimated_duration: li._meta?.estimated_duration || '',
                 deadline: li._meta?.deadline || '',
                 status: li._meta?.status || '',
                 dependencies: li._meta?.dependencies || '',
@@ -382,8 +522,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderTree(nodes, parentUl, level = 0) {
         nodes.forEach(node => {
-            // Assign classification for this level
-            node.level = CLASS_LABELS[level] || 'Item';
+            // Only assign default classification if not set
+            if (!node.level) node.level = CLASS_LABELS[level] || 'Item';
             const li = createProjectNode(node.name, node, level);
             if (node.id) {
                 li.dataset.projectId = node.id;
@@ -414,6 +554,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Store meta info on the element
         li._meta = {
             description: meta.description || '',
+            planned_start: meta.planned_start || '',
+            estimated_duration: meta.estimated_duration || '',
             deadline: meta.deadline || '',
             status: meta.status || 'Not Started',
             dependencies: meta.dependencies || '',
@@ -421,16 +563,7 @@ document.addEventListener('DOMContentLoaded', function() {
             level: meta.level || (CLASS_LABELS[level] || 'Item')
         };
 
-    // Classification label (for visual alignment with headers)
-    const classSpan = document.createElement('span');
-    classSpan.className = 'proj-class';
-    classSpan.textContent = CLASS_LABELS[level] || 'Item';
-    classSpan.style.display = 'inline-block';
-    classSpan.style.width = '6em';
-    classSpan.style.fontWeight = 'bold';
-    classSpan.style.color = '#FF8200';
-    classSpan.style.marginRight = '1em';
-    li.appendChild(classSpan);
+    // (Removed classification label from node display)
 
     // Name span
     const nameSpan = document.createElement('span');
@@ -459,6 +592,8 @@ document.addEventListener('DOMContentLoaded', function() {
         function updateMetaSpan() {
             metaSpan.textContent =
                 (li._meta.description ? ' | ' + li._meta.description : '') +
+                (li._meta.planned_start ? ' | Start: ' + li._meta.planned_start : '') +
+                (li._meta.estimated_duration ? ' | Est: ' + li._meta.estimated_duration : '') +
                 (li._meta.deadline ? ' | Due: ' + li._meta.deadline : '') +
                 (li._meta.status ? ' | Status: ' + li._meta.status : '') +
                 (li._meta.dependencies ? ' | Depends: ' + li._meta.dependencies : '') +
@@ -549,6 +684,8 @@ function openEditNodeModal(li, nameSpan, updateMetaSpan) {
     editNodeUpdateMeta = updateMetaSpan;
     document.getElementById('edit-node-name').value = nameSpan.textContent;
     document.getElementById('edit-node-desc').value = li._meta.description || '';
+    document.getElementById('edit-node-planned-start').value = li._meta.planned_start || '';
+    document.getElementById('edit-node-estimated-duration').value = li._meta.estimated_duration || '';
     document.getElementById('edit-node-deadline').value = li._meta.deadline || '';
     document.getElementById('edit-node-status').value = li._meta.status || 'Not Started';
     document.getElementById('edit-node-deps').value = li._meta.dependencies || '';
@@ -569,6 +706,8 @@ if (editNodeForm) {
         if (!editNodeTargetLi || !editNodeNameSpan || !editNodeUpdateMeta) return;
         editNodeNameSpan.textContent = document.getElementById('edit-node-name').value;
         editNodeTargetLi._meta.description = document.getElementById('edit-node-desc').value;
+        editNodeTargetLi._meta.planned_start = document.getElementById('edit-node-planned-start').value;
+        editNodeTargetLi._meta.estimated_duration = document.getElementById('edit-node-estimated-duration').value;
         editNodeTargetLi._meta.deadline = document.getElementById('edit-node-deadline').value;
         editNodeTargetLi._meta.status = document.getElementById('edit-node-status').value;
         editNodeTargetLi._meta.dependencies = document.getElementById('edit-node-deps').value;
@@ -579,6 +718,17 @@ if (editNodeForm) {
         if (classSpan) classSpan.textContent = editNodeTargetLi._meta.level;
         editNodeUpdateMeta();
         editNodeModal.style.display = 'none';
+        // Show 'Saved!' message
+        const savedMsg = document.getElementById('edit-node-saved');
+        if (savedMsg) {
+            savedMsg.style.display = 'block';
+            savedMsg.style.opacity = '1';
+            setTimeout(() => {
+                savedMsg.style.transition = 'opacity 0.7s';
+                savedMsg.style.opacity = '0';
+                setTimeout(() => { savedMsg.style.display = 'none'; savedMsg.style.transition = ''; }, 700);
+            }, 900);
+        }
         setTimeout(autoSaveTree, 100);
     };
 }
@@ -613,6 +763,7 @@ if (editNodeForm) {
         return li;
     }
 
+
     // Optionally: show gallery for selected project in dropdown on load
     if (projectSelect) {
         projectSelect.addEventListener('change', function() {
@@ -623,3 +774,6 @@ if (editNodeForm) {
         showGalleryForProject(projectSelect.value);
     }
 });
+
+
+

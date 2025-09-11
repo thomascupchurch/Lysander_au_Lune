@@ -1,3 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Tree Builder</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header style="background:#fff;color:#222;padding:1.2em 2em 1.2em 2em;margin-bottom:2em;letter-spacing:0.03em;font-size:1.5em;font-weight:bold;">
+        <div style="display:flex;justify-content:center;align-items:center;height:100%;">
+            <img src="/static/LSI_Power_T_Combo_Logo.png" alt="Header Logo" style="height:144px;max-width:90vw;object-fit:contain;">
+        </div>
+    </header>
+    <div id="edit-node-saved" style="display:none;position:fixed;z-index:2100;left:50%;top:10vh;transform:translateX(-50%);background:#4BB543;color:#fff;padding:1em 2em;border-radius:6px;font-size:1.2em;box-shadow:0 2px 8px rgba(0,0,0,0.15);">Saved!</div>
     <!-- Modal for editing node details -->
     <div id="edit-node-modal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;">
         <div style="background:#fff;padding:2em 2em 1em 2em;border-radius:8px;min-width:320px;max-width:90vw;position:relative;">
@@ -6,6 +21,8 @@
                 <h3>Edit Node</h3>
                 <label>Name:<br><input type="text" id="edit-node-name" required></label><br><br>
                 <label>Description:<br><input type="text" id="edit-node-desc"></label><br><br>
+                <label>Planned Start Date:<br><input type="date" id="edit-node-planned-start"></label><br><br>
+                <label>Estimated Duration:<br><input type="text" id="edit-node-estimated-duration" placeholder="e.g. 5 days, 2 weeks"></label><br><br>
                 <label>Deadline:<br><input type="date" id="edit-node-deadline"></label><br><br>
                 <label>Status:<br><select id="edit-node-status">
                     <option>Not Started</option>
@@ -24,16 +41,7 @@
             </form>
         </div>
     </div>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Tree Builder</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <h1>Project Tree Builder</h1>
+
     <form id="add-project-form">
         <input type="text" id="project-name" placeholder="Project Name" required>
         <button type="submit">Add Project</button>
@@ -62,10 +70,13 @@
         <span style="flex:1;">Feature</span>
         <span style="flex:1;">Item</span>
     </div>
-    <ul id="project-tree">
+    <div id="tree-container" style="background:#fff;padding:2em 2em 2em 2em;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.07);margin-bottom:2em;">
+        <ul id="project-tree" style="background:transparent;">
         <!-- Project nodes will appear here -->
-    </ul>
-    <div id="gantt-container" style="display:none;margin-top:2em;"></div>
+        </ul>
+    </div>
+    <div id="gantt-layer-controls" style="display:none;margin-bottom:1em;"></div>
+    <div id="gantt-container" style="display:none;margin-top:2em;background:#fff;"></div>
     <script src="/static/tree.js"></script>
 </body>
 </html>

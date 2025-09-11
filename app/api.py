@@ -18,6 +18,9 @@ def build_tree(nodes, parent=None):
                 proj.status = node.get('status')
                 proj.dependencies = node.get('dependencies')
                 proj.milestones = node.get('milestones')
+                proj.level = node.get('level')
+                proj.estimated_duration = node.get('estimated_duration')
+                proj.planned_start = node.get('planned_start')
                 proj.parent = parent
             else:
                 proj = ProjectNode(
@@ -27,6 +30,9 @@ def build_tree(nodes, parent=None):
                     status=node.get('status'),
                     dependencies=node.get('dependencies'),
                     milestones=node.get('milestones'),
+                    level=node.get('level'),
+                    estimated_duration=node.get('estimated_duration'),
+                    planned_start=node.get('planned_start'),
                     parent=parent
                 )
                 db.session.add(proj)
@@ -39,6 +45,9 @@ def build_tree(nodes, parent=None):
                 status=node.get('status'),
                 dependencies=node.get('dependencies'),
                 milestones=node.get('milestones'),
+                level=node.get('level'),
+                estimated_duration=node.get('estimated_duration'),
+                planned_start=node.get('planned_start'),
                 parent=parent
             )
             db.session.add(proj)

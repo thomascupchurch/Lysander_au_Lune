@@ -19,6 +19,8 @@ class ProjectNode(db.Model):
     status = db.Column(db.String(32))
     dependencies = db.Column(db.Text)
     milestones = db.Column(db.Text)
+    estimated_duration = db.Column(db.String(32))
+    planned_start = db.Column(db.String(32))
     parent_id = db.Column(db.Integer, db.ForeignKey('project_node.id'))
     children = db.relationship('ProjectNode', backref=db.backref('parent', remote_side=[id]), lazy=True)
     files = db.relationship('File', back_populates='project', lazy=True)
@@ -34,6 +36,8 @@ class ProjectNode(db.Model):
             'status': self.status,
             'dependencies': self.dependencies,
             'milestones': self.milestones,
+            'estimated_duration': self.estimated_duration,
+            'planned_start': self.planned_start,
             'level': self.level,
             'children': [child.to_dict() for child in self.children],
             'files': [f.filename for f in self.files]
