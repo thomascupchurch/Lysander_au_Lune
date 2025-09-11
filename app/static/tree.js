@@ -81,7 +81,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 status: node.status || '',
                 parent: parentName,
                 level: node.level || CLASS_LABELS[level] || 'Item',
-                estimated_duration: node.estimated_duration || ''
+                estimated_duration: node.estimated_duration || '',
+                external: node.external === true
             });
             if (node.children && node.children.length) {
                 flattenTreeForGantt(node.children, arr, node.name, level + 1);
@@ -141,8 +142,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         bar.style.position = 'absolute';
                         bar.style.left = left + '%';
                         bar.style.width = width + '%';
-                        bar.style.background = level === 'Item' ? '#FF8200' : (level === 'Feature' ? '#4B4B4B' : (level === 'Phase' ? '#0074D9' : '#aaa'));
-                        bar.title = `${row.name}\n${level}\n${row.status ? 'Status: ' + row.status + '\n' : ''}${row.estimated_duration ? 'Est: ' + row.estimated_duration + '\n' : ''}${row.start ? 'Start: ' + row.start + '\n' : ''}${row.end ? 'End: ' + row.end : ''}`;
+                        bar.style.background = '#FF8200';
+                        bar.title = `${row.name}\n${level}\n${row.external ? 'External' : 'Internal'}\n${row.status ? 'Status: ' + row.status + '\n' : ''}${row.estimated_duration ? 'Est: ' + row.estimated_duration + '\n' : ''}${row.start ? 'Start: ' + row.start + '\n' : ''}${row.end ? 'End: ' + row.end : ''}`;
                     } else {
                         // Missing date(s): show warning bar at left
                         bar.style.position = 'absolute';
@@ -423,7 +424,18 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         const projectName = document.getElementById('project-name').value.trim();
         if (projectName) {
-            const li = createProjectNode(projectName);
+            // Ensure new node has all fields for Gantt
+            const li = createProjectNode(projectName, {
+                description: '',
+                planned_start: '',
+                estimated_duration: '',
+                deadline: '',
+                status: 'Not Started',
+                dependencies: '',
+                milestones: '',
+                level: 'Item',
+                external: false
+            });
             projectTree.appendChild(li);
             form.reset();
         }
@@ -505,7 +517,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 status: li._meta?.status || '',
                 dependencies: li._meta?.dependencies || '',
                 milestones: li._meta?.milestones || '',
-                level: li._meta?.level || (CLASS_LABELS[level] || 'Item')
+                level: li._meta?.level || (CLASS_LABELS[level] || 'Item'),
+                external: li._meta?.external === true
             };
             if (li.dataset.projectId) {
                 node.id = parseInt(li.dataset.projectId);
@@ -560,7 +573,8 @@ document.addEventListener('DOMContentLoaded', function() {
             status: meta.status || 'Not Started',
             dependencies: meta.dependencies || '',
             milestones: meta.milestones || '',
-            level: meta.level || (CLASS_LABELS[level] || 'Item')
+            level: meta.level || (CLASS_LABELS[level] || 'Item'),
+            external: meta.external === true
         };
 
     // (Removed classification label from node display)
@@ -691,6 +705,7 @@ function openEditNodeModal(li, nameSpan, updateMetaSpan) {
     document.getElementById('edit-node-deps').value = li._meta.dependencies || '';
     document.getElementById('edit-node-milestones').value = li._meta.milestones || '';
     document.getElementById('edit-node-level').value = li._meta.level || 'Project';
+    document.getElementById('edit-node-external').checked = li._meta.external === true;
     editNodeModal.style.display = 'flex';
 }
 
@@ -713,6 +728,7 @@ if (editNodeForm) {
         editNodeTargetLi._meta.dependencies = document.getElementById('edit-node-deps').value;
         editNodeTargetLi._meta.milestones = document.getElementById('edit-node-milestones').value;
         editNodeTargetLi._meta.level = document.getElementById('edit-node-level').value;
+        editNodeTargetLi._meta.external = document.getElementById('edit-node-external').checked;
         // Update classification label if present
         const classSpan = editNodeTargetLi.querySelector('.proj-class');
         if (classSpan) classSpan.textContent = editNodeTargetLi._meta.level;

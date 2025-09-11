@@ -21,6 +21,7 @@ def build_tree(nodes, parent=None):
                 proj.level = node.get('level')
                 proj.estimated_duration = node.get('estimated_duration')
                 proj.planned_start = node.get('planned_start')
+                proj.external = node.get('external', False)
                 proj.parent = parent
             else:
                 proj = ProjectNode(
@@ -33,6 +34,7 @@ def build_tree(nodes, parent=None):
                     level=node.get('level'),
                     estimated_duration=node.get('estimated_duration'),
                     planned_start=node.get('planned_start'),
+                    external=node.get('external', False),
                     parent=parent
                 )
                 db.session.add(proj)
@@ -48,6 +50,7 @@ def build_tree(nodes, parent=None):
                 level=node.get('level'),
                 estimated_duration=node.get('estimated_duration'),
                 planned_start=node.get('planned_start'),
+                external=node.get('external', False),
                 parent=parent
             )
             db.session.add(proj)

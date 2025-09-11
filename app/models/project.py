@@ -11,6 +11,7 @@ class File(db.Model):
     project = db.relationship('ProjectNode', back_populates='files')
 
 
+
 class ProjectNode(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(128), nullable=False)
@@ -26,6 +27,8 @@ class ProjectNode(db.Model):
     files = db.relationship('File', back_populates='project', lazy=True)
     # New: level/classification (Project, Phase, Feature, Item)
     level = db.Column(db.String(16), nullable=False, default='Project')
+    # New: external/internal flag
+    external = db.Column(db.Boolean, nullable=False, default=False)
 
     def to_dict(self):
         return {
@@ -39,6 +42,7 @@ class ProjectNode(db.Model):
             'estimated_duration': self.estimated_duration,
             'planned_start': self.planned_start,
             'level': self.level,
+            'external': self.external,
             'children': [child.to_dict() for child in self.children],
             'files': [f.filename for f in self.files]
         }
